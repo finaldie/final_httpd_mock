@@ -11,8 +11,6 @@ Description:
     NOTE: It require kernel version greater than 2.6.31
 
 How to Run:
-    1. git submodule init
-    2. git submodule update
-    3. make
-    4. ./httpd_mock -c default_httpd_mock.cfg
-
+    1. make
+    2. make install
+    3. cd bin && ./httpd_mock -c ../etc/httpd_mock.cfg
