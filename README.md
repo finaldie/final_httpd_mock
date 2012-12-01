@@ -1,7 +1,5 @@
-final_httpd_mock
-================
-
 Description:
+
     A http mock service, for performance testing, debugging or something else.
     It support 3 types of response:
         1. specific length response
@@ -11,6 +9,7 @@ Description:
     NOTE: It require kernel version greater than 2.6.31
 
 How to Run:
+
     1. make
     2. make install
     3. cd bin && ./httpd_mock -c ../etc/httpd_mock.cfg
