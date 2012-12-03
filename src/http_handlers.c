@@ -417,12 +417,6 @@ void http_on_timer(fev_state* fev, void* arg)
                     goto pop_next_node;
                 }
 
-                if ( !mgr->sargs->timeout ) {
-                    FLOG_DEBUG(glog, "fast shutdown connection due to timeout==0, fd=%d", fd);
-                    destroy_client(node->cli);
-                    goto pop_next_node;
-                }
-
                 timer_node_push(mgr->backup, node);
             } else if ( diff >= mgr->sargs->timeout ) {
                 FLOG_WARN(glog, "delete timeout");
@@ -524,13 +518,6 @@ void http_read(fev_state* fev, fev_buff* evbuff, void* arg)
     if ( ret < 0 ) {
         // something goes wrong, client has been destroyed
         FLOG_DEBUG(glog, "buffer cannot write, fd=%d", fd);
-        return;
-    }
-
-    // if timeout == 0 && latency == 0, shutdown directly
-    if ( !interval && !cli->owner->sargs->timeout ) {
-        destroy_client(cli);
-        FLOG_DEBUG(glog, "fast shutdown connection, fd=%d", fd);
         return;
     }
 
