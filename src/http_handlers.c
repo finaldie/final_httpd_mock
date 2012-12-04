@@ -399,12 +399,13 @@ void http_on_timer(fev_state* fev, void* arg)
 
     while ( node ) {
         int diff = get_diff_time(&node->cli->last_active, &now) / 1000;
-        FLOG_DEBUG(glog, "on timer: fd=%d, diff=%d", node->cli->fd, diff);
+        int fd = node->cli->fd;
+        FLOG_DEBUG(glog, "on timer: fd=%d, diff=%d", fd, diff);
 
-        if ( diff >= node->timeout ) {
-            if ( node->cli->response_complete < node->cli->request_complete ) {
+        if ( node->cli->response_complete < node->cli->request_complete ) {
+            if ( diff >= node->timeout ) {
+                // we need to send respose
                 int ret = -1;
-                int fd = node->cli->fd;
                 if ( !node->cli->ischunked ) {
                     ret = send_http_response(node->cli);
                 } else {
@@ -412,21 +413,29 @@ void http_on_timer(fev_state* fev, void* arg)
                 }
 
                 if ( ret < 0 ) {
-                    // something goes wrong
+                    // something goes wrong, the client has been destroyed, go
+                    // to the next node
                     FLOG_DEBUG(glog, "on timer, but buffer cannot write, fd=%d", fd);
                     goto pop_next_node;
                 }
 
-                timer_node_push(mgr->backup, node);
-            } else if ( diff >= mgr->sargs->timeout ) {
-                FLOG_WARN(glog, "delete timeout");
+                // we are finished one request, then reset timeout and last active time
+                get_cur_time(&node->cli->last_active);
+                node->timeout = mgr->sargs->timeout;
+            }
+
+            timer_node_push(mgr->backup, node);
+        } else if ( node->cli->response_complete == node->cli->request_complete ) {
+            // check whether client out of time
+            if ( diff >= node->timeout ) {
                 destroy_client(node->cli);
+                FLOG_WARN(glog, "delete timeout, fd=%d", fd);
             } else {
                 timer_node_push(mgr->backup, node);
             }
         } else {
-            // not time out
-            timer_node_push(mgr->backup, node);
+            destroy_client(node->cli);
+            FLOG_ERROR(glog, "on timer, internal error, fd=%d", fd);
         }
 
 pop_next_node:
