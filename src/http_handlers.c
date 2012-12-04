@@ -45,6 +45,7 @@
 #define FHTTP_CHUNK_END           "0\r\n\r\n"
 #define FHTTP_CHUNK_END_SIZE      (sizeof(FHTTP_CHUNK_END) - 1)
 #define FHTTP_CHUNK_RESPONSE_HEADER_SIZE (sizeof(fake_chunk_response_header) - 1)
+#define FHTTP_MAX_WAIT_TIME_FOR_1ST_REQ  (1000 * 10)
 
 /**
  * design mode:
@@ -584,6 +585,9 @@ void http_accept(fev_state* fev, int fd, void* ud)
         cli->owner = mgr;
         cli->owner->current_conn++;
         cli->ischunked = 0;
+        timer_node* tnode = timer_node_create(cli, FHTTP_MAX_WAIT_TIME_FOR_1ST_REQ);
+        timer_node_push(cli->owner->current, tnode);
+
         FLOG_DEBUG(glog, "fev_buff created fd=%d", fd);
     } else {
         FLOG_ERROR(glog, "cannot create evbuff fd=%d", fd);
