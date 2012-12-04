@@ -284,13 +284,15 @@ int create_response(char* buf, size_t buffsize, size_t size)
 }
 
 static
-int send_http_response(client* cli)
+int send_http_response(client* cli, int* need_shutdown)
 {
     // here we have two options to implement
     // 1. snprintf once ( we choose this )
     // 2. writev ( in future )
 
     client_mgr* mgr = cli->owner;
+    *need_shutdown = cli->owner->sargs->timeout ? 0 : 1;
+
     // 1. generate response body
     int response_size = gen_random_response_size(mgr->sargs->min_response_size,
                                                  mgr->sargs->max_response_size);
@@ -346,10 +348,11 @@ int set_chunked_status(client* cli)
 }
 
 static
-int send_http_chunked_response(client* cli)
+int send_http_chunked_response(client* cli, int* need_shutdown)
 {
     client_mgr* mgr = cli->owner;
     int offset = 0;
+    *need_shutdown = 0;
 
     // if this is the first chunk block, fill response headers first
     if ( !cli->chunk_block_num ) {
@@ -368,6 +371,7 @@ int send_http_chunked_response(client* cli)
         // mark response complete and reset block num for next request
         cli->response_complete++;
         cli->chunk_block_num = 0;
+        *need_shutdown = mgr->sargs->timeout ? 0 : 1;
     } else {
         // have data left, fill normal chunk
         int datasize = cli->chunk_size < cli->last_data_size ? cli->chunk_size :
@@ -405,17 +409,25 @@ void http_on_timer(fev_state* fev, void* arg)
         if ( node->cli->response_complete < node->cli->request_complete ) {
             if ( diff >= node->timeout ) {
                 // we need to send respose
-                int ret = -1;
+                int ret = -1, need_shutdown = 0;
                 if ( !node->cli->ischunked ) {
-                    ret = send_http_response(node->cli);
+                    ret = send_http_response(node->cli, &need_shutdown);
                 } else {
-                    ret = send_http_chunked_response(node->cli);
+                    ret = send_http_chunked_response(node->cli, &need_shutdown);
                 }
 
                 if ( ret < 0 ) {
                     // something goes wrong, the client has been destroyed, go
                     // to the next node
                     FLOG_DEBUG(glog, "on timer, but buffer cannot write, fd=%d", fd);
+                    goto pop_next_node;
+                }
+
+                // when we found the server timeout == 0, we can fast shutdown
+                // the connection instead of going to next timer round checking
+                if ( need_shutdown ) {
+                    destroy_client(node->cli);
+                    FLOG_DEBUG(glog, "on timer, timeout==0 fast shutdown, fd=%d", fd);
                     goto pop_next_node;
                 }
 
@@ -500,7 +512,7 @@ void http_read(fev_state* fev, fev_buff* evbuff, void* arg)
     cli->ischunked = get_ischunked(cli->owner->sargs->response_type,
                                     cli->owner->sargs->chunk_ratio);
 
-    int interval = 0, ret = 0;
+    int interval = 0, ret = 0, need_shutdown = 0;
     if ( !cli->ischunked ) {
         int latency = gen_random_latency(cli->owner->sargs->min_latency,
                                      cli->owner->sargs->max_latency);
@@ -508,7 +520,7 @@ void http_read(fev_state* fev, fev_buff* evbuff, void* arg)
             interval = latency;
         } else {
             interval = cli->owner->sargs->timeout;
-            ret = send_http_response(cli);
+            ret = send_http_response(cli, &need_shutdown);
         }
     } else {
         // set chunk status if client need chunked response
@@ -520,13 +532,19 @@ void http_read(fev_state* fev, fev_buff* evbuff, void* arg)
             interval = latency;
         } else {
             interval = cli->owner->sargs->timeout;
-            ret = send_http_chunked_response(cli);
+            ret = send_http_chunked_response(cli, &need_shutdown);
         }
     }
 
     if ( ret < 0 ) {
         // something goes wrong, client has been destroyed
         FLOG_DEBUG(glog, "buffer cannot write, fd=%d", fd);
+        return;
+    }
+
+    if ( need_shutdown ) {
+        destroy_client(cli);
+        FLOG_DEBUG(glog, "timeout==0 fast shutdown, fd=%d", fd);
         return;
     }
 

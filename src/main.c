@@ -220,6 +220,10 @@ int checkServiceArgs(service_arg_t* sargs)
         exit(1);
     }
 
+    if ( sargs->timeout < 0 ) {
+        printf("timeout must >= 0\n");
+        exit(1);
+    }
 
     if ( sargs->chunk_blocks <= 0 ) {
         printf("chunk blocks must > 0\n");
