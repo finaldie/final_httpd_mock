@@ -25,7 +25,10 @@ LIBS = -lfhash \
 	   -lrt
 
 SRCS = main.c \
-       http_handlers.c
+       http_handlers.c \
+       http_content_handler.c \
+       http_chunk_handler.c \
+       http_mix_handler.c
 
 COPY_FILES = 
 	   
