@@ -303,29 +303,30 @@ void http_read(fev_state* fev, fev_buff* evbuff, void* arg)
     // mark active
     get_cur_time(&cli->last_active);
 
-    int ret = 0, complete = 0;
+    int ret = 0;
+    int complete = 0;
+    int latency = cli->opt.get_latency(cli);
     cli->opt.pre_send_req(cli);
-    ret = cli->opt.handler(cli, &complete);
 
-    if ( ret < 0 ) {
-        // something goes wrong, client has been destroyed
-        FLOG_DEBUG(glog, "buffer cannot write, fd=%d", fd);
-        return;
-    }
-
-    int latency = 0;
-    if ( complete ) {
-        int server_timeout = cli->owner->sargs->timeout;
-        if( server_timeout == 0 ) {
-            destroy_client(cli);
-            FLOG_DEBUG(glog, "timeout==0 fast shutdown, fd=%d", fd);
+    if( !latency ) {
+        ret = cli->opt.handler(cli, &complete);
+        if ( ret < 0 ) {
+            // something goes wrong, client has been destroyed
+            FLOG_DEBUG(glog, "buffer cannot write, fd=%d", fd);
             return;
-        } else {
-            latency = server_timeout;
-            cli->response_complete++;
         }
-    } else {
-        latency = cli->opt.get_latency(cli);
+
+        if ( complete ) {
+            int server_timeout = cli->owner->sargs->timeout;
+            if( server_timeout == 0 ) {
+                destroy_client(cli);
+                FLOG_DEBUG(glog, "timeout==0 fast shutdown, fd=%d", fd);
+                return;
+            } else {
+                latency = server_timeout;
+                cli->response_complete++;
+            }
+        }
     }
 
     // create timer node
@@ -440,7 +441,7 @@ int init_service(service_arg_t* sargs)
 
 int start_service()
 {
-    // every 2ms, the timer will wake up
+    // every 10ms, the timer will wake up
     fev_timer* resp_timer = fev_add_timer_event(fev, 10 * FHTTP_1MS, 10 * FHTTP_1MS,
                                                 http_on_timer, cli_mgr);
     if ( !resp_timer ) {
