@@ -22,13 +22,17 @@ LIBS = -lfhash \
 	   -lfmbuf \
 	   -lfconf \
 	   -lfhash \
+	   -lfpcap_conv \
+	   -lpcap \
 	   -lrt
 
 SRCS = main.c \
        http_handlers.c \
        http_content_handler.c \
        http_chunk_handler.c \
-       http_mix_handler.c
+       http_mix_handler.c \
+       http_load_pcap.c \
+       http_pcap_handler.c
 
 COPY_FILES = 
 	   

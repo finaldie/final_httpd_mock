@@ -17,3 +17,7 @@
 *.app
 bin/*
 etc/*
+
+cscope.*
+tags
+types_c.taghl

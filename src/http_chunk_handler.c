@@ -26,16 +26,15 @@
 #define FHTTP_CHUNK_END           "0\r\n\r\n"
 #define FHTTP_CHUNK_END_SIZE      (sizeof(FHTTP_CHUNK_END) - 1)
 #define FHTTP_CHUNK_RESPONSE_HEADER_SIZE (sizeof(fake_chunk_response_header) - 1)
-#define FCHUNK_ST(cli)            ((chunk_status*)(cli->priv))
+#define FCHUNK_ST(cli)            ((chunk_state*)(cli->priv))
 
 extern log_file_t* glog;
 
-typedef struct chunk_status {
-    int         ischunked;
+typedef struct chunk_state {
     int         chunk_block_num;
     int         chunk_size;
     int         last_data_size;
-} chunk_status;
+} chunk_state;
 
 // create simple chunk
 // follow the chunk format:
@@ -129,8 +128,8 @@ int chunk_resp_handler(client* cli, int* complete)
 static inline
 void chunk_resp_init(client* cli)
 {
-    cli->priv = malloc(sizeof(chunk_status));
-    memset(cli->priv, 0, sizeof(chunk_status));
+    cli->priv = malloc(sizeof(chunk_state));
+    memset(cli->priv, 0, sizeof(chunk_state));
 }
 
 static inline
@@ -143,9 +142,13 @@ void chunk_resp_free(client* cli)
 static inline
 int chunk_get_latency(client* cli)
 {
-    int latency = gen_random_latency(cli->owner->sargs->min_chunk_latency,
+    if ( cli->last_latency != FHTTP_INVALID_LATENCY ) {
+        return cli->last_latency;
+    }
+
+    cli->last_latency = gen_random_latency(cli->owner->sargs->min_chunk_latency,
                                      cli->owner->sargs->max_chunk_latency);
-    return latency ? latency : cli->owner->sargs->timeout;
+    return cli->last_latency ? cli->last_latency : cli->owner->sargs->timeout;
 }
 
 static inline

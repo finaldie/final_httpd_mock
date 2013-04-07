@@ -92,6 +92,8 @@ void read_config(const char* filename, service_arg_t* sargs)
                 sargs->response_type = RESP_TYPE_CHUNKED;
             } else if ( strcasecmp(value, "MIX") == 0 ) {
                 sargs->response_type = RESP_TYPE_MIX;
+            } else if ( strcasecmp(value, "PCAP") == 0 ) {
+                sargs->response_type = RESP_TYPE_PCAP;
             } else {
                 printf("not found any correct reponse type\n");
                 exit(1);
@@ -137,6 +139,10 @@ void read_config(const char* filename, service_arg_t* sargs)
             }
         } else if ( strcmp(key, "log_filename") == 0 ) {
             strncpy(sargs->log_filename, value, FHTTP_MAX_LOG_FILENAME_SIZE);
+        } else if ( strcmp(key, "pcap_file") == 0 ) {
+            strncpy(sargs->pcap_filename, value, FHTTP_PCAP_FILE_NAME_SIZE);
+        } else if ( strcmp(key, "pcap_filter_rule") == 0 ) {
+            strncpy(sargs->filter_rules, value, FHTTP_PCAP_FILTER_RULE_SIZE);
         }
     }
 
@@ -250,6 +256,8 @@ int checkServiceArgs(service_arg_t* sargs)
     printf("  \\_ min_chunk_response_size : %d\n", sargs->min_chunk_response_size);
     printf("  \\_ max_chunk_response_size : %d\n", sargs->max_chunk_response_size);
     printf("  \\_ chunk_blocks : %d\n", sargs->chunk_blocks);
+    printf("  \\_ pcap_file : %s\n", sargs->pcap_filename);
+    printf("  \\_ pcap_filter_rule : [%s]\n", sargs->filter_rules);
     printf("  \\_ timeout : %d\n", sargs->timeout);
     printf("  \\_ log_level : %d\n", sargs->log_level);
     printf("  \\_ log_filename : %s\n", sargs->log_filename);

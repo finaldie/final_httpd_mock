@@ -84,9 +84,13 @@ void content_pre_send(client* cli)
 static inline
 int content_get_latency(client* cli)
 {
-    int latency = gen_random_latency(cli->owner->sargs->min_latency,
+    if ( cli->last_latency != FHTTP_INVALID_LATENCY ) {
+        return cli->last_latency;
+    }
+
+    cli->last_latency = gen_random_latency(cli->owner->sargs->min_latency,
                                      cli->owner->sargs->max_latency);
-    return latency ? latency : cli->owner->sargs->timeout;
+    return cli->last_latency ? cli->last_latency : cli->owner->sargs->timeout;
 }
 
 void init_content_resp_opt(client* cli)

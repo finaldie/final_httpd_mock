@@ -6,6 +6,9 @@
 #include "tu_inc.h"
 
 #define FHTTP_MAX_LOG_FILENAME_SIZE 256
+#define FHTTP_PCAP_FILE_NAME_SIZE   512
+#define FHTTP_PCAP_FILTER_RULE_SIZE 512
+#define FHTTP_INVALID_LATENCY       -1
 #define FHTTP_CRLF                "\r\n"
 #define FHTTP_CRLF_SIZE           (sizeof(FHTTP_CRLF) - 1)
 
@@ -13,7 +16,7 @@ typedef enum {
     RESP_TYPE_CONTENT = 0,
     RESP_TYPE_CHUNKED,
     RESP_TYPE_MIX,
-    RESP_PCAP,
+    RESP_TYPE_PCAP,
 
     RESP_TYPE_NUM   // do not delete this, count of response type
 } resp_type_t;
@@ -36,6 +39,10 @@ typedef struct {
     int min_chunk_response_size;
     int max_chunk_response_size;
     int chunk_blocks;
+
+    // pcap related
+    char pcap_filename[FHTTP_PCAP_FILE_NAME_SIZE];
+    char filter_rules[FHTTP_PCAP_FILTER_RULE_SIZE];
 
     int timeout;
     int log_level;
@@ -79,6 +86,7 @@ typedef struct client {
     int         request_complete;
     int         response_complete;
     my_time     last_active;
+    int         last_latency;
     fev_buff*   evbuff;
     timer_node* tnidx;
     struct client_mgr* owner;

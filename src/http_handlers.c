@@ -15,6 +15,7 @@
 #include "net_core.h"
 
 #include "http_handlers.h"
+#include "http_load_pcap.h"
 
 #define FHTTP_REPONSE_HEADER_SIZE        2048
 #define FHTTP_MAX_WAIT_TIME_FOR_1ST_REQ  (1000 * 10)
@@ -224,9 +225,12 @@ void http_on_timer(fev_state* fev, void* arg)
                         // we are finished one request, then reset timeout
                         node->timeout = mgr->sargs->timeout;
                         node->cli->response_complete++;
-        	        FLOG_DEBUG(glog, "on timer: fd=%d, we have finished a request, reset timeout to %d",
+                        FLOG_DEBUG(glog, "on timer: fd=%d, we have finished a request, reset timeout to %d",
                                    fd, mgr->sargs->timeout);
                     }
+                } else {
+                    // update latency
+                    node->timeout = node->cli->opt.get_latency(node->cli);
                 }
             }
 
@@ -305,8 +309,8 @@ void http_read(fev_state* fev, fev_buff* evbuff, void* arg)
 
     int ret = 0;
     int complete = 0;
-    int latency = cli->opt.get_latency(cli);
     cli->opt.pre_send_req(cli);
+    int latency = cli->opt.get_latency(cli);
 
     if( !latency ) {
         ret = cli->opt.handler(cli, &complete);
@@ -326,6 +330,8 @@ void http_read(fev_state* fev, fev_buff* evbuff, void* arg)
                 latency = server_timeout;
                 cli->response_complete++;
             }
+        } else {
+            latency = cli->opt.get_latency(cli);
         }
     }
 
@@ -359,15 +365,17 @@ void http_accept(fev_state* fev, int fd, void* ud)
     client* cli = create_client();
     fev_buff* evbuff = fevbuff_new(fev, fd, http_read, http_error, cli);
     if( evbuff ) {
-        get_cur_time(&cli->last_active);
         cli->fd = fd;
+        cli->last_latency = FHTTP_INVALID_LATENCY;
         cli->evbuff = evbuff;
         cli->owner = mgr;
         cli->owner->current_conn++;
+        get_cur_time(&cli->last_active);
         timer_node* tnode = timer_node_create(cli, FHTTP_MAX_WAIT_TIME_FOR_1ST_REQ);
         timer_node_push(cli->owner->current, tnode);
+
         // init client private opt
-        resp_tbl[mgr->sargs->response_type].init(cli);
+        resp_tbl[cli_mgr->sargs->response_type].init(cli);
         // call client's init
         cli->opt.init(cli);
 
@@ -399,6 +407,7 @@ void register_resp_handlers()
     register_resp(RESP_TYPE_CONTENT, init_content_resp_opt);
     register_resp(RESP_TYPE_CHUNKED, init_chunk_resp_opt);
     register_resp(RESP_TYPE_MIX, init_mix_resp_opt);
+    register_resp(RESP_TYPE_PCAP, init_pcap_resp_opt);
 }
 
 int init_listen(service_arg_t* sargs)
@@ -435,6 +444,13 @@ int init_service(service_arg_t* sargs)
 
     // init random seed
     srand(time(NULL));
+
+    if( cli_mgr->sargs->response_type == RESP_TYPE_PCAP ) {
+        printf("loading pcap file...\n");
+        service_arg_t* conf = cli_mgr->sargs;
+        load_http_resp(conf->pcap_filename, conf->filter_rules);
+        printf("load pcap file complete\n");
+    }
 
     return 0;
 }
