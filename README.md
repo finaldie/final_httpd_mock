@@ -1,7 +1,7 @@
 Description:
 
     A http mock service, for performance testing, debugging or something else.
-    It support 3 types of response:
+    It support 4 types of response:
         1. specific length response
         2. chunked response
         3. mix type ( contain two types above )
