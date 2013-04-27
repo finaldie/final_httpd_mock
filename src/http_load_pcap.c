@@ -11,6 +11,7 @@
 
 #define FHTTP_DEFAULT_QUEUE_SIZE 1
 #define HTTP_MAX_ONE_LEN         2048
+#define HTTP_RESP_HDR_ITEM_SIZE  20
 
 typedef struct data_pkg_t{
     struct timeval ts;
@@ -38,6 +39,18 @@ struct _cli_state_t {
     data_pkg_t*   curr_pkg;
 };
 
+typedef struct {
+    pcap_state_t* state;
+    resp_t*       curr_resp;
+    data_pkg_t*   curr_pkg;
+    int           valid;
+} sess_state_t;
+
+static pcap_state_t** session_queue = NULL;
+static int resp_queue_idx = 0;
+static int resp_queue_size = 0;
+static int resp_queue_max = 0;
+
 cli_state_t* pc_create_state()
 {
     cli_state_t* state = malloc(sizeof(cli_state_t));
@@ -46,17 +59,6 @@ cli_state_t* pc_create_state()
     state->curr_pkg = NULL;
     return state;
 }
-
-typedef struct {
-    pcap_state_t* state;
-    resp_t* curr_resp;
-    data_pkg_t* curr_pkg;
-} sess_state_t;
-
-static pcap_state_t** session_queue = NULL;
-static int resp_queue_idx = 0;
-static int resp_queue_size = 0;
-static int resp_queue_max = 0;
 
 void pc_destroy_state(cli_state_t* state)
 {
@@ -246,6 +248,7 @@ void create_session(session_t* sess, fapp_data_t* app_data)
     sess_state->state = state;
     sess_state->curr_resp = NULL;
     sess_state->curr_pkg = NULL;
+    sess_state->valid = 1;
 
     sess->ud = sess_state;
 }
@@ -305,20 +308,53 @@ static
 int is_new_resp(const char* data, int len)
 {
     char line[HTTP_MAX_ONE_LEN];
-    int offset = 0;
-    int tot_offset = 0;
-    char http_version[10];
-    char status[20];
-    int return_code = 0;
+    int  offset = 0;
+    int  tot_offset = 0;
+    char http_version[HTTP_RESP_HDR_ITEM_SIZE];
+    char return_code[HTTP_RESP_HDR_ITEM_SIZE];
+    char status[HTTP_RESP_HDR_ITEM_SIZE];
     const char* tp = http_getline(data+tot_offset, len-tot_offset, &offset,
                                   line, HTTP_MAX_ONE_LEN);
     if( !tp ) {
-        printf("this line is too long\n");
+        //printf("this line is too long\n");
         return 0;
     }
 
+    // do not use sscanf, the stack may broken when the buffer data not format well
+    char* token;
+    char* save;
+    char* str;
+    int i = 0;
+    memset(http_version, 0, HTTP_RESP_HDR_ITEM_SIZE);
+    memset(return_code, 0, HTTP_RESP_HDR_ITEM_SIZE);
+    memset(status, 0, HTTP_RESP_HDR_ITEM_SIZE);
+    for(i = 0, str = line; ; i++, str = NULL) {
+        token = strtok_r(str, " ", &save);
+        if( !token ) {
+            break;
+        }
 
-    sscanf(line, "%s %d %s", http_version, &return_code, status);
+        switch(i) {
+        case 0:
+            strncpy(http_version, token, HTTP_RESP_HDR_ITEM_SIZE-1);
+            break;
+        case 1:
+            strncpy(return_code, token, HTTP_RESP_HDR_ITEM_SIZE-1);
+            break;
+        case 2:
+            strncpy(status, token, HTTP_RESP_HDR_ITEM_SIZE-1);
+            break;
+        default:
+            break;
+        }
+    }
+
+    if( i < 2 ) {
+        // not a valid http response header, but a short data
+        return 0;
+    }
+
+    // TODO: do more check, to check the return_code whether valid
     if( !strcasecmp(http_version, "HTTP/1.1") ||
         !strcasecmp(http_version, "HTTP/1.0") ) {
         return 1;
@@ -348,6 +384,10 @@ void process_data(session_t* sess, fapp_data_t* app_data, void* ud)
 {
     sess_state_t* sess_state = sess->ud;
     pcap_state_t* state = sess_state->state;
+    if( !sess_state->valid ) {
+        // this is not valid http data, ignore this session
+        return;
+    }
 
     int new_resp = is_new_resp(app_data->data, app_data->len);
     if( new_resp ) {
@@ -360,6 +400,14 @@ void process_data(session_t* sess, fapp_data_t* app_data, void* ud)
             sess_state->curr_resp = create_resp(&(sess_state->curr_pkg->ts));
         } else {
             sess_state->curr_resp = create_resp(&state->syn_ts);
+        }
+    } else {
+        resp_t* old_resp = sess_state->curr_resp;
+        if( !old_resp ) {
+            // this is not a valid http data, set valid = 0, ignore
+            // this session
+            sess_state->valid = 0;
+            return;
         }
     }
 
@@ -451,9 +499,8 @@ int load_http_resp(const char* filename, const char* rules)
     action.cleanup = cleanup_foreach;
     action.ud = NULL;
 
-    if( fpcap_convert(action) ) {
-        return 1;
-    }
+    int ret = fpcap_convert(action);
+    printf("Totally [%d] sessions build complete\n", resp_queue_idx);
 
-    return 0;
+    return ret;
 }

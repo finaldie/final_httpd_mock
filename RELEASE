@@ -1,3 +1,5 @@
+0.1.2 2013-04-27
+    Fix coredump issue when handle the un-http response header format data
 0.1.1 2013-04-08
     Support loading pcap file, to simulate the real server response
 
