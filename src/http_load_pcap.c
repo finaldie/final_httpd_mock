@@ -13,43 +13,11 @@
 #define HTTP_MAX_ONE_LEN         2048
 #define HTTP_RESP_HDR_ITEM_SIZE  20
 
-typedef struct data_pkg_t{
-    struct timeval ts;
-    char*  data;
-    int    len;
-} data_pkg_t;
-
-typedef struct resp_t{
-    pl_mgr      pkg_list;
-    uint32_t    pkg_cnt;
-    struct timeval cts; // timestamp of creation
-} resp_t;
-
-typedef struct pcap_state_t{
-    pl_mgr   resp_list;
-    uint32_t resp_cnt;
-    struct timeval syn_ts; // timestamp of creation
-} pcap_state_t;
-
-struct _cli_state_t {
-    pcap_state_t* state;
-    liter         resp_iter;
-    liter         pkg_iter;
-    resp_t*       curr_resp;
-    data_pkg_t*   curr_pkg;
-};
-
-typedef struct {
-    pcap_state_t* state;
-    resp_t*       curr_resp;
-    data_pkg_t*   curr_pkg;
-    int           valid;
-} sess_state_t;
-
-static pcap_state_t** session_queue = NULL;
-static int resp_queue_idx = 0;
+pcap_state_t** session_queue = NULL;
+int resp_queue_idx = 0;
 static int resp_queue_size = 0;
 static int resp_queue_max = 0;
+
 
 cli_state_t* pc_create_state()
 {
@@ -77,6 +45,7 @@ void pc_get_next_session(cli_state_t* cli_state)
     cli_state->resp_iter = flist_iter(state->resp_list);
     cli_state->curr_resp = NULL;
     cli_state->curr_pkg = NULL;
+
 }
 
 //void dump_pkgs(pcap_state_t* state)
@@ -200,10 +169,12 @@ resp_t* create_resp(struct timeval* ts)
 }
 
 static
-data_pkg_t* create_pkg(struct timeval* ts, char* data, int len)
+data_pkg_t* create_pkg(struct timeval* ts, uint32_t ack, uint32_t seq, char* data, int len)
 {
     data_pkg_t* pkg = malloc(sizeof(data_pkg_t));
     pkg->ts = *ts;
+    pkg->ack = ack;
+    pkg->seq = seq;
     pkg->data = malloc(len);
     memcpy(pkg->data, data, len);
     pkg->len = len;
@@ -412,29 +383,138 @@ void process_data(session_t* sess, fapp_data_t* app_data, void* ud)
     }
 
     resp_t* resp = sess_state->curr_resp;
-    data_pkg_t* pkg = create_pkg(&app_data->ts, app_data->data, app_data->len);
+    data_pkg_t* pkg = create_pkg(&app_data->ts, app_data->ack, app_data->seq, app_data->data, app_data->len);
+    
     assemble_package(sess_state, resp, pkg);
+}
+static
+void get_tcp_info(session_t* sess, int sess_index)
+{
+	uint32_t seq_arr[5000];
+	int resp_index, package_index=0;
+	sess_state_t* sess_state = sess->ud;
+	pcap_state_t* state = sess_state->state;
+	FILE* tcp_info_fptr = fopen("tcp_info.data", "a+");
+
+	int pkg_loop(void *data)
+	{
+		data_pkg_t* pkg = (data_pkg_t*)data;
+		fprintf(tcp_info_fptr, "%u ", pkg->seq);
+		seq_arr[package_index++] = pkg->seq;
+		return 0;
+	}
+	int resp_loop(void *data)
+	{
+		resp_t* resp = (resp_t*)data;
+		fprintf(tcp_info_fptr, "response %d", resp_index);
+		flist_foreach(resp->pkg_list, pkg_loop);
+		resp_index++;
+		return 0;
+	}
+	fprintf(tcp_info_fptr, "\nsession %d %u responses\n", sess_index,
+					state->resp_cnt);
+	resp_index = 1;
+	memset(seq_arr, 0, sizeof(seq_arr));
+	flist_foreach(state->resp_list, resp_loop);
+
+	fclose(tcp_info_fptr);
+
+}
+//delete all redundant pkg within a session;
+static
+void deal_redundant(session_t* sess)
+{
+	uint32_t seq_arr[5000];
+	pl_mgr back_pkg_list;
+	int index = 0;
+	sess_state_t* sess_state = sess->ud;
+	pcap_state_t* state = sess_state->state;
+	int pkg_loop(void *data)
+	{
+		data_pkg_t* pkg = (data_pkg_t*)data;
+	    int i;
+	    for(i=0; i<index; ++i)
+	    {
+	    	if(seq_arr[i] == pkg->seq)
+	    		return 0;
+	    }
+	    seq_arr[index++] = pkg->seq;
+	    flist_push(back_pkg_list, pkg);
+	    return 0;
+	}
+
+	int resp_loop(void *data)
+	{
+		back_pkg_list = flist_create();
+		resp_t* resp = (resp_t*)data;
+		flist_foreach(resp->pkg_list, pkg_loop);
+		flist_delete(resp->pkg_list);
+		resp->pkg_list = back_pkg_list;
+		return 0;
+	}
+	flist_foreach(state->resp_list, resp_loop);
+}
+
+//sort all pkg within a response;
+static
+void deal_muddled(session_t* sess)
+{
+	sess_state_t* sess_state = sess->ud;
+	pcap_state_t* state = sess_state->state;
+	int cmp(void* a, void* b)
+	{
+		data_pkg_t* pkg_a = (data_pkg_t*)a;
+		data_pkg_t* pkg_b = (data_pkg_t*)b;
+		return pkg_a->seq - pkg_b->seq;
+	}
+	int resp_loop(void *data)
+	{
+		resp_t* resp = (resp_t*)data;
+		flist_sort(resp->pkg_list, cmp);
+		return 0;
+	}
+	flist_foreach(state->resp_list, resp_loop);
+
 }
 
 static
 void session_over(session_t* sess)
 {
-    sess_state_t* sess_state = sess->ud;
+	sess_state_t* sess_state = sess->ud;
     pcap_state_t* state = sess_state->state;
     // finish the last resp assemble job
     assemble_response(sess_state);
 
-    printf("session [%d]: build complete, contain %u responses\n", resp_queue_idx,
+    printf("session %d %u responses\n", resp_queue_idx,
             state->resp_cnt);
-    int resp_loop(void* data) {
-        resp_t* resp = (resp_t*)data;
-        printf(" \\_%u packages\n", resp->pkg_cnt);
-        assert(resp->pkg_cnt);
-        assert( !flist_isempty(resp->pkg_list) );
-        return 0;
-    }
-    flist_foreach(state->resp_list, resp_loop);
 
+    get_tcp_info(sess, resp_queue_idx);
+
+    deal_redundant(sess);
+    deal_muddled(sess);
+    /*
+    if( is_redundant(sess, resp_queue_idx) == 1)
+    {
+    	printf("session %d redundant\nremove redundant pkg...", resp_queue_idx);
+
+    	deal_redundant(sess);
+    	if(is_redundant(sess, resp_queue_idx) == 0)
+    		printf("no redundant\n");
+
+
+    }
+
+    if( is_muddled(sess, resp_queue_idx) == 1)
+    {
+    	printf("session %d muddled\nsort muddled pkgs...\n", resp_queue_idx);
+
+    	deal_muddled(sess);
+    	if(is_muddled(sess, resp_queue_idx) == 0)
+    		printf("no muddled pkgs\n");
+
+
+    }
+	*/
     if( !flist_isempty(state->resp_list) ) {
         // no space
         if( resp_queue_idx == resp_queue_max ) {
