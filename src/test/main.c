@@ -35,7 +35,7 @@ int main(int argc, char** argv){
     char *pcap_file = (char*)malloc(1000);
 
     char *rules = (char*)malloc(1000);
-    readPcapConfig("../../../etc/httpd_mock.cfg", pcap_file, rules);
+    readPcapConfig("../httpd_mock.cfg", pcap_file, rules);
    // printf("haha%s\n", pcap_file);
     load_http_resp(pcap_file, rules);
     tu_run_cases();
