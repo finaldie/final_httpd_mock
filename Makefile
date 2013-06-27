@@ -7,7 +7,8 @@ all:
 	git submodule update
 	(cd flibs && make)
 	cd src && make
-
+check:
+	cd src/test && make && make install && make run_test
 install:
 	-(test -d $(prefix)/$(BIN_DIR_NAME) || mkdir $(prefix)/$(BIN_DIR_NAME))
 	-(test -d $(prefix)/$(CFG_DIR_NAME) || mkdir $(prefix)/$(CFG_DIR_NAME))

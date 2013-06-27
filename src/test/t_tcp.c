@@ -1,5 +1,37 @@
 #include "../http_load_pcap.h"
 #include "../../flibs/ftu/tu_inc.h"
+
+typedef struct pcap_state_t{
+    pl_mgr   resp_list;
+    uint32_t resp_cnt;
+    struct timeval syn_ts; // timestamp of creation
+} pcap_state_t;
+typedef struct data_pkg_t{
+    struct timeval ts;
+    char*  data;
+    int    len;
+    uint32_t ack; //used for detection of dumplicate TCP packet
+    uint32_t seq;
+} data_pkg_t;
+
+typedef struct resp_t{
+    pl_mgr      pkg_list;
+    uint32_t    pkg_cnt;
+    struct timeval cts; // timestamp of creation
+} resp_t;
+struct _cli_state_t {
+    pcap_state_t* state;
+    liter         resp_iter;
+    liter         pkg_iter;
+    resp_t*       curr_resp;
+    data_pkg_t*   curr_pkg;
+};
+typedef struct {
+    pcap_state_t* state;
+    resp_t*       curr_resp;
+    data_pkg_t*   curr_pkg;
+    int           valid;
+} sess_state_t;
 extern pcap_state_t** session_queue;
 extern int resp_queue_idx;
 

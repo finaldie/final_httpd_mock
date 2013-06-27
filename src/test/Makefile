@@ -28,12 +28,10 @@ LIBS = -lfhash \
 
 SRCS = main.c \
        t_tcp.c \
-      # ../http_load_pcap.c 
 
 COPY_FILES =
 
 DEPS = $(patsubst %.c,%.d,$(SRCS))
-#OBJS = $(patsubst %.c,%.o,$(notdir $(SRCS)))
 OBJS = $(patsubst %.c,%.o,$(SRCS))
 CFLAGS = -Wall -Werror -g -O2
 
@@ -44,8 +42,6 @@ $(TARGET):$(OBJS) $(DEPS)
 
 %.d:%.c
 	$(CC) $(INC) -MM $< > $@
-#http_load_pcap.o:../http_load_pcap.c
-#	$(CC) $(CFLAGS) $(INC) -c -o ../http_load_pcap.o $< 
 %.o:%.c 
 	$(CC) $(CFLAGS) $(INC) -c $< 
 
