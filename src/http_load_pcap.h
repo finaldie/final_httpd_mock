@@ -15,7 +15,7 @@ char* pc_get_pkg_data(cli_state_t* state);
 int   pc_get_pkg_len(cli_state_t* state);
 int   pc_is_last_pkg(cli_state_t* state);
 int   pc_get_next_pkg_latency(cli_state_t* state);
-
 int   load_http_resp(const char* filename, const char* rules);
+typedef unsigned int uint32_t;
 
 #endif
