@@ -6,11 +6,11 @@
  *    Description:  all test files function header write here
  *
  *        Version:  1.0
- *        Created:  11/24/2011 10:44:06
+ *        Created:  06/27/2013 3:59:01
  *       Revision:  none
  *       Compiler:  gcc
  *
- *         Author:  yuzhang hu (finaldie)
+ *         Author:  jun duan
  *
  * =====================================================================================
  */

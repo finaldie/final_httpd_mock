@@ -44,8 +44,8 @@ typedef struct {
     data_pkg_t*   curr_pkg;
     int           valid;
 } sess_state_t;
-pcap_state_t** session_queue = NULL;
-int resp_queue_idx = 0;
+static pcap_state_t** session_queue = NULL;
+static int resp_queue_idx = 0;
 static int resp_queue_size = 0;
 static int resp_queue_max = 0;
 
@@ -76,7 +76,6 @@ void pc_get_next_session(cli_state_t* cli_state)
     cli_state->resp_iter = flist_iter(state->resp_list);
     cli_state->curr_resp = NULL;
     cli_state->curr_pkg = NULL;
-
 }
 
 //void dump_pkgs(pcap_state_t* state)
@@ -418,39 +417,6 @@ void process_data(session_t* sess, fapp_data_t* app_data, void* ud)
     
     assemble_package(sess_state, resp, pkg);
 }
-static
-void get_tcp_info(session_t* sess, int sess_index)
-{
-	uint32_t seq_arr[5000];
-	int resp_index, package_index=0;
-	sess_state_t* sess_state = sess->ud;
-	pcap_state_t* state = sess_state->state;
-	FILE* tcp_info_fptr = fopen("tcp_info.data", "a+");
-
-	int pkg_loop(void *data)
-	{
-		data_pkg_t* pkg = (data_pkg_t*)data;
-		fprintf(tcp_info_fptr, "%u ", pkg->seq);
-		seq_arr[package_index++] = pkg->seq;
-		return 0;
-	}
-	int resp_loop(void *data)
-	{
-		resp_t* resp = (resp_t*)data;
-		fprintf(tcp_info_fptr, "response %d", resp_index);
-		flist_foreach(resp->pkg_list, pkg_loop);
-		resp_index++;
-		return 0;
-	}
-	fprintf(tcp_info_fptr, "\nsession %d %u responses\n", sess_index,
-					state->resp_cnt);
-	resp_index = 1;
-	memset(seq_arr, 0, sizeof(seq_arr));
-	flist_foreach(state->resp_list, resp_loop);
-
-	fclose(tcp_info_fptr);
-
-}
 //delete all redundant pkg within a session;
 static
 void deal_redundant(session_t* sess)
@@ -518,34 +484,8 @@ void session_over(session_t* sess)
 
     printf("session %d %u responses\n", resp_queue_idx,
             state->resp_cnt);
-
-    get_tcp_info(sess, resp_queue_idx);
-
     deal_redundant(sess);
     deal_muddled(sess);
-    /*
-    if( is_redundant(sess, resp_queue_idx) == 1)
-    {
-    	printf("session %d redundant\nremove redundant pkg...", resp_queue_idx);
-
-    	deal_redundant(sess);
-    	if(is_redundant(sess, resp_queue_idx) == 0)
-    		printf("no redundant\n");
-
-
-    }
-
-    if( is_muddled(sess, resp_queue_idx) == 1)
-    {
-    	printf("session %d muddled\nsort muddled pkgs...\n", resp_queue_idx);
-
-    	deal_muddled(sess);
-    	if(is_muddled(sess, resp_queue_idx) == 0)
-    		printf("no muddled pkgs\n");
-
-
-    }
-	*/
     if( !flist_isempty(state->resp_list) ) {
         // no space
         if( resp_queue_idx == resp_queue_max ) {

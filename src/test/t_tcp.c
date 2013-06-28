@@ -1,6 +1,6 @@
 #include "../http_load_pcap.h"
 #include "../../flibs/ftu/tu_inc.h"
-
+#include <stdint.h>
 typedef struct pcap_state_t{
     pl_mgr   resp_list;
     uint32_t resp_cnt;
@@ -32,8 +32,6 @@ typedef struct {
     data_pkg_t*   curr_pkg;
     int           valid;
 } sess_state_t;
-extern pcap_state_t** session_queue;
-extern int resp_queue_idx;
 
 int is_redundant(pcap_state_t* sess, int sess_index)
 {
@@ -114,23 +112,31 @@ int is_muddled(pcap_state_t* sess, int sess_index )
 }
 void test_deal_duplicate()
 {
-	int i;
-	for(i=0; i<resp_queue_idx; ++i)
+	int i=0;
+	cli_state_t * client = pc_create_state();
+	cli_state_t * first = client;
+	while(1)
 	{
-		pcap_state_t* sess = session_queue[i];
+		pc_get_next_session(client);
+		if( client == first)
+			break;
+		pcap_state_t* sess = client->state;
 		FTU_ASSERT( is_redundant(sess, i)== 0 );
 	}
-
 }
 void test_deal_muddled()
 {
-	int i;
-	for(i=0; i<resp_queue_idx; ++i)
+	int i=0;
+	cli_state_t * client = pc_create_state();
+	cli_state_t * first = client;
+	while(1)
 	{
-		pcap_state_t* sess = session_queue[i];
+		pc_get_next_session(client);
+		if( client == first)
+			break;
+		pcap_state_t* sess = client->state;
 		FTU_ASSERT( is_muddled(sess, i)== 0 );
 	}
-
 }
 
 

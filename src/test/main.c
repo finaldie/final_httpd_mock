@@ -9,10 +9,8 @@
 #include "inc.h"
 #include "read_conf.h"
 void register_module(){
-    tu_register_module(test_deal_duplicate,         "for testing duplicate pkg");
+    tu_register_module(test_deal_duplicate,       "for testing duplicate pkg");
     tu_register_module(test_deal_muddled,         "for testing muddled pkg");
-
-
 }
 void readPcapConfig(const char *cfg_file, char *pcap_file, char *rules)
 {
@@ -32,12 +30,12 @@ int main(int argc, char** argv){
     tu_register_init();
     register_module();
     //load pcap
-    char *pcap_file = (char*)malloc(1000);
+   // char *pcap_file = (char*)malloc(1000);
 
-    char *rules = (char*)malloc(1000);
-    readPcapConfig("../httpd_mock.cfg", pcap_file, rules);
+   // char *rules = (char*)malloc(1000);
+   // readPcapConfig("../httpd_mock.cfg", pcap_file, rules);
    // printf("haha%s\n", pcap_file);
-    load_http_resp(pcap_file, rules);
+    load_http_resp("../output_loss_10%", "src port 80");
     tu_run_cases();
     return 0;
 }
