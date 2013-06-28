@@ -13,10 +13,17 @@
 #define HTTP_MAX_ONE_LEN         2048
 #define HTTP_RESP_HDR_ITEM_SIZE  20
 
+typedef struct pcap_state_t{
+    pl_mgr   resp_list;
+    uint32_t resp_cnt;
+    struct timeval syn_ts; // timestamp of creation
+} pcap_state_t;
 typedef struct data_pkg_t{
     struct timeval ts;
     char*  data;
     int    len;
+    uint32_t ack; //used for detection of dumplicate TCP packet
+    uint32_t seq;
 } data_pkg_t;
 
 typedef struct resp_t{
@@ -24,13 +31,6 @@ typedef struct resp_t{
     uint32_t    pkg_cnt;
     struct timeval cts; // timestamp of creation
 } resp_t;
-
-typedef struct pcap_state_t{
-    pl_mgr   resp_list;
-    uint32_t resp_cnt;
-    struct timeval syn_ts; // timestamp of creation
-} pcap_state_t;
-
 struct _cli_state_t {
     pcap_state_t* state;
     liter         resp_iter;
@@ -38,18 +38,17 @@ struct _cli_state_t {
     resp_t*       curr_resp;
     data_pkg_t*   curr_pkg;
 };
-
 typedef struct {
     pcap_state_t* state;
     resp_t*       curr_resp;
     data_pkg_t*   curr_pkg;
     int           valid;
 } sess_state_t;
-
 static pcap_state_t** session_queue = NULL;
 static int resp_queue_idx = 0;
 static int resp_queue_size = 0;
 static int resp_queue_max = 0;
+
 
 cli_state_t* pc_create_state()
 {
@@ -200,10 +199,12 @@ resp_t* create_resp(struct timeval* ts)
 }
 
 static
-data_pkg_t* create_pkg(struct timeval* ts, char* data, int len)
+data_pkg_t* create_pkg(struct timeval* ts, uint32_t ack, uint32_t seq, char* data, int len)
 {
     data_pkg_t* pkg = malloc(sizeof(data_pkg_t));
     pkg->ts = *ts;
+    pkg->ack = ack;
+    pkg->seq = seq;
     pkg->data = malloc(len);
     memcpy(pkg->data, data, len);
     pkg->len = len;
@@ -412,29 +413,79 @@ void process_data(session_t* sess, fapp_data_t* app_data, void* ud)
     }
 
     resp_t* resp = sess_state->curr_resp;
-    data_pkg_t* pkg = create_pkg(&app_data->ts, app_data->data, app_data->len);
+    data_pkg_t* pkg = create_pkg(&app_data->ts, app_data->ack, app_data->seq, app_data->data, app_data->len);
+    
     assemble_package(sess_state, resp, pkg);
+}
+//delete all redundant pkg within a session;
+static
+void deal_redundant(session_t* sess)
+{
+	uint32_t seq_arr[5000];
+	pl_mgr back_pkg_list;
+	int index = 0;
+	sess_state_t* sess_state = sess->ud;
+	pcap_state_t* state = sess_state->state;
+	int pkg_loop(void *data)
+	{
+		data_pkg_t* pkg = (data_pkg_t*)data;
+	    int i;
+	    for(i=0; i<index; ++i)
+	    {
+	    	if(seq_arr[i] == pkg->seq)
+	    		return 0;
+	    }
+	    seq_arr[index++] = pkg->seq;
+	    flist_push(back_pkg_list, pkg);
+	    return 0;
+	}
+
+	int resp_loop(void *data)
+	{
+		back_pkg_list = flist_create();
+		resp_t* resp = (resp_t*)data;
+		flist_foreach(resp->pkg_list, pkg_loop);
+		flist_delete(resp->pkg_list);
+		resp->pkg_list = back_pkg_list;
+		return 0;
+	}
+	flist_foreach(state->resp_list, resp_loop);
+}
+
+//sort all pkg within a response;
+static
+void deal_muddled(session_t* sess)
+{
+	sess_state_t* sess_state = sess->ud;
+	pcap_state_t* state = sess_state->state;
+	int cmp(void* a, void* b)
+	{
+		data_pkg_t* pkg_a = (data_pkg_t*)a;
+		data_pkg_t* pkg_b = (data_pkg_t*)b;
+		return pkg_a->seq - pkg_b->seq;
+	}
+	int resp_loop(void *data)
+	{
+		resp_t* resp = (resp_t*)data;
+		flist_sort(resp->pkg_list, cmp);
+		return 0;
+	}
+	flist_foreach(state->resp_list, resp_loop);
+
 }
 
 static
 void session_over(session_t* sess)
 {
-    sess_state_t* sess_state = sess->ud;
+	sess_state_t* sess_state = sess->ud;
     pcap_state_t* state = sess_state->state;
     // finish the last resp assemble job
     assemble_response(sess_state);
 
-    printf("session [%d]: build complete, contain %u responses\n", resp_queue_idx,
+    printf("session %d %u responses\n", resp_queue_idx,
             state->resp_cnt);
-    int resp_loop(void* data) {
-        resp_t* resp = (resp_t*)data;
-        printf(" \\_%u packages\n", resp->pkg_cnt);
-        assert(resp->pkg_cnt);
-        assert( !flist_isempty(resp->pkg_list) );
-        return 0;
-    }
-    flist_foreach(state->resp_list, resp_loop);
-
+    deal_redundant(sess);
+    deal_muddled(sess);
     if( !flist_isempty(state->resp_list) ) {
         // no space
         if( resp_queue_idx == resp_queue_max ) {
