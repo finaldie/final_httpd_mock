@@ -12,6 +12,7 @@ Description:
 
 How to Run:
 
-    1. make
-    2. make install
-    3. cd bin && ./httpd_mock -c ../etc/httpd_mock.cfg
+    1. ./bootstrap
+    2. make
+    3. make install
+    4. cd bin && ./httpd_mock -c ../etc/httpd_mock.cfg

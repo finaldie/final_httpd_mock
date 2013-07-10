@@ -1,3 +1,5 @@
+0.1.3 2013-07-10
+    Issue #6: Support deal with muddled tcp/ip package and retransmit package
 0.1.2 2013-04-27
     Fix coredump issue when handle the un-http response header format data
 0.1.1 2013-04-08

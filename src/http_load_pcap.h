@@ -1,8 +1,6 @@
 #ifndef __HTTP_LOAD_PCAP__
 #define __HTTP_LOAD_PCAP__
 
-#include "flist.h"
-
 #define FPCAP_NO_LATENCY -1
 typedef struct _cli_state_t cli_state_t;
 
@@ -17,5 +15,6 @@ int   pc_is_last_pkg(cli_state_t* state);
 int   pc_get_next_pkg_latency(cli_state_t* state);
 
 int   load_http_resp(const char* filename, const char* rules);
+void  destroy_http_resp();
 
 #endif

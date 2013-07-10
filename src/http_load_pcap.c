@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <assert.h>
 
+#include "flist.h"
 #include "fpcap_convert.h"
 #include "http_load_pcap.h"
 
@@ -17,6 +18,8 @@ typedef struct data_pkg_t{
     struct timeval ts;
     char*  data;
     int    len;
+    uint32_t ack; //used for detection of dumplicate TCP packet
+    uint32_t seq;
 } data_pkg_t;
 
 typedef struct resp_t{
@@ -28,6 +31,7 @@ typedef struct resp_t{
 typedef struct pcap_state_t{
     pl_mgr   resp_list;
     uint32_t resp_cnt;
+    uint32_t total_pkg_cnt;
     struct timeval syn_ts; // timestamp of creation
 } pcap_state_t;
 
@@ -200,10 +204,12 @@ resp_t* create_resp(struct timeval* ts)
 }
 
 static
-data_pkg_t* create_pkg(struct timeval* ts, char* data, int len)
+data_pkg_t* create_pkg(struct timeval* ts, uint32_t ack, uint32_t seq, char* data, int len)
 {
     data_pkg_t* pkg = malloc(sizeof(data_pkg_t));
     pkg->ts = *ts;
+    pkg->ack = ack;
+    pkg->seq = seq;
     pkg->data = malloc(len);
     memcpy(pkg->data, data, len);
     pkg->len = len;
@@ -228,11 +234,9 @@ void destroy_pcap_state(pcap_state_t* state)
 {
     resp_t* resp = NULL;
     while( (resp = flist_pop(state->resp_list)) ) {
-        printf("destroy resp\n");
         destroy_pcap_resp(resp);
     }
 
-    printf("destroy curr resp\n");
     flist_delete(state->resp_list);
     free(state);
 }
@@ -244,6 +248,7 @@ void create_session(session_t* sess, fapp_data_t* app_data)
     pcap_state_t* state = malloc(sizeof(pcap_state_t));
     state->resp_list = flist_create();
     state->resp_cnt = 0;
+    state->total_pkg_cnt = 0;
     state->syn_ts = app_data->ts;
     sess_state->state = state;
     sess_state->curr_resp = NULL;
@@ -376,6 +381,7 @@ void assemble_package(sess_state_t* sess_state, resp_t* resp, data_pkg_t* pkg)
 {
     flist_push(resp->pkg_list, pkg);
     resp->pkg_cnt++;
+    sess_state->state->total_pkg_cnt++;
     sess_state->curr_pkg = pkg;
 }
 
@@ -412,8 +418,110 @@ void process_data(session_t* sess, fapp_data_t* app_data, void* ud)
     }
 
     resp_t* resp = sess_state->curr_resp;
-    data_pkg_t* pkg = create_pkg(&app_data->ts, app_data->data, app_data->len);
+    data_pkg_t* pkg = create_pkg(&app_data->ts, app_data->ack, app_data->seq, app_data->data, app_data->len);
+
     assemble_package(sess_state, resp, pkg);
+}
+
+//delete all redundant pkg within a session;
+static
+void deal_redundant(session_t* sess)
+{
+    pl_mgr        new_pkg_list = NULL;
+    pl_mgr        new_resp_list = flist_create();
+    int           index = 0;
+    sess_state_t* sess_state = sess->ud;
+    pcap_state_t* state = sess_state->state;
+    uint32_t*     seq_array = malloc(sizeof(uint32_t) * state->total_pkg_cnt);
+    uint32_t      new_pkg_cnt = 0;
+    uint32_t      new_total_pkg_cnt = 0;
+
+    // TODO: no need to copy every pkg for every response, we need to fix this
+    // in the future
+    int pkg_loop(void *data)
+    {
+        data_pkg_t* pkg = (data_pkg_t*)data;
+        int i = 0;
+        for(; i < index; ++i)
+        {
+            if( seq_array[i] == pkg->seq )
+                return 0;
+        }
+
+        seq_array[index++] = pkg->seq;
+        flist_push(new_pkg_list, pkg);
+        new_pkg_cnt++;
+        new_total_pkg_cnt++;
+        return 0;
+    }
+
+    void scan_resp(resp_t* data)
+    {
+        new_pkg_cnt = 0;
+        resp_t* resp = (resp_t*)data;
+        new_pkg_list = flist_create();
+
+        flist_foreach(resp->pkg_list, pkg_loop);
+        flist_delete(resp->pkg_list);
+        resp->pkg_list = new_pkg_list;
+        resp->pkg_cnt = new_pkg_cnt;
+    }
+
+    resp_t* resp = NULL;
+    while( (resp = flist_pop(state->resp_list)) != NULL ) {
+        scan_resp(resp);
+        if( !flist_isempty(resp->pkg_list) ) {
+            flist_push(new_resp_list, resp);
+        } else {
+            // delete resp
+            destroy_pcap_resp(resp);
+        }
+    }
+
+    state->resp_list = new_resp_list;
+    state->total_pkg_cnt = new_total_pkg_cnt;
+
+    free(seq_array);
+}
+
+//sort all pkg within a response;
+static
+void deal_muddled(session_t* sess)
+{
+    sess_state_t* sess_state = sess->ud;
+    pcap_state_t* state = sess_state->state;
+
+    int cmp(void* a, void* b)
+    {
+        data_pkg_t* pkg_a = (data_pkg_t*)a;
+        data_pkg_t* pkg_b = (data_pkg_t*)b;
+        return pkg_a->seq - pkg_b->seq;
+    }
+
+    int resp_loop(void *data)
+    {
+        resp_t* resp = (resp_t*)data;
+        flist_sort(resp->pkg_list, cmp);
+        return 0;
+    }
+
+    flist_foreach(state->resp_list, resp_loop);
+}
+
+void dump_state_status(pcap_state_t* state)
+{
+    printf("session [%d]: build complete, contain %u responses\n", resp_queue_idx,
+            state->resp_cnt);
+
+    int resp_loop(void* data) {
+        resp_t* resp = (resp_t*)data;
+        printf(" \\_%u packages\n", resp->pkg_cnt);
+        assert(resp->pkg_cnt);
+        assert( !flist_isempty(resp->pkg_list) );
+        return 0;
+    }
+
+    flist_foreach(state->resp_list, resp_loop);
 }
 
 static
@@ -423,17 +531,10 @@ void session_over(session_t* sess)
     pcap_state_t* state = sess_state->state;
     // finish the last resp assemble job
     assemble_response(sess_state);
+    deal_redundant(sess);
+    deal_muddled(sess);
 
-    printf("session [%d]: build complete, contain %u responses\n", resp_queue_idx,
-            state->resp_cnt);
-    int resp_loop(void* data) {
-        resp_t* resp = (resp_t*)data;
-        printf(" \\_%u packages\n", resp->pkg_cnt);
-        assert(resp->pkg_cnt);
-        assert( !flist_isempty(resp->pkg_list) );
-        return 0;
-    }
-    flist_foreach(state->resp_list, resp_loop);
+    //dump_state_status(state);
 
     if( !flist_isempty(state->resp_list) ) {
         // no space
@@ -477,9 +578,9 @@ void loading_pkg(fsession_event event, session_t* sess, fapp_data_t* app_data, v
 static
 int cleanup_foreach(session_t* sess, void* ud)
 {
-    printf("cleanup....................................\n");
+    //printf("cleanup....................................\n");
     destroy_session(sess);
-    printf("cleanup....................................done\n");
+    //printf("cleanup....................................done\n");
     return 0;
 }
 
@@ -503,4 +604,16 @@ int load_http_resp(const char* filename, const char* rules)
     printf("Totally [%d] sessions build complete\n", resp_queue_idx);
 
     return ret;
+}
+
+void destroy_http_resp()
+{
+    int i = 0;
+    for( ; i < resp_queue_size; i++ ) {
+        destroy_pcap_state(session_queue[i]);
+    }
+
+    resp_queue_idx = 0;
+    resp_queue_size = 0;
+    resp_queue_max = FHTTP_DEFAULT_QUEUE_SIZE;
 }
