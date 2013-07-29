@@ -15,9 +15,7 @@
 
 #define fake_chunk_response_header \
 "HTTP/1.1 200 OK\r\n" \
-"Date: Tue, 13 Nov 2012 13:21:30 GMT\r\n" \
 "Server: Http Mock\r\n" \
-"Last-Modified: Tue, 12 Jan 2010 13:48:00 GMT\r\n" \
 "Transfer-Encoding: chunked\r\n" \
 "Connection: Keep-Alive\r\n" \
 "Content-Type: text/html\r\n" \
