@@ -33,7 +33,7 @@ int create_response(char* buf, size_t buffsize, size_t size)
     memset(buf, 70, size);
     buf[size] = '\0';
 
-    return size + FHTTP_CRLF_SIZE;
+    return size;
 }
 
 static
