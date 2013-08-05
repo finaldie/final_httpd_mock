@@ -90,7 +90,7 @@ int content_get_latency(client* cli)
 
     cli->last_latency = gen_random_latency(cli->owner->sargs->min_latency,
                                      cli->owner->sargs->max_latency);
-    return cli->last_latency ? cli->last_latency : cli->owner->sargs->timeout;
+    return cli->last_latency;
 }
 
 void init_content_resp_opt(client* cli)
