@@ -1,9 +1,9 @@
 #ifndef __HTTP_HANDLERS__
 #define __HTTP_HANDLERS__
 
-#include "fev_buff.h"
-#include "fev_timer.h"
-#include "tu_inc.h"
+#include "flibs/fev_buff.h"
+#include "flibs/fev_timer.h"
+#include "flibs/ftu_inc.h"
 
 #define FHTTP_MAX_LOG_FILENAME_SIZE 256
 #define FHTTP_PCAP_FILE_NAME_SIZE   512

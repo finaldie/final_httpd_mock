@@ -6,8 +6,8 @@
 #include <errno.h>
 #include <assert.h>
 
-#include "flist.h"
-#include "fpcap_convert.h"
+#include "flibs/flist.h"
+#include "flibs/fpcap_convert.h"
 #include "http_load_pcap.h"
 
 #define FHTTP_DEFAULT_QUEUE_SIZE 1
@@ -23,13 +23,13 @@ typedef struct data_pkg_t{
 } data_pkg_t;
 
 typedef struct resp_t{
-    pl_mgr      pkg_list;
+    flist*      pkg_list;
     uint32_t    pkg_cnt;
     struct timeval cts; // timestamp of creation
 } resp_t;
 
 typedef struct pcap_state_t{
-    pl_mgr   resp_list;
+    flist*   resp_list;
     uint32_t resp_cnt;
     uint32_t total_pkg_cnt;
     struct timeval syn_ts; // timestamp of creation
@@ -37,8 +37,8 @@ typedef struct pcap_state_t{
 
 struct _cli_state_t {
     pcap_state_t* state;
-    liter         resp_iter;
-    liter         pkg_iter;
+    flist_iter    resp_iter;
+    flist_iter    pkg_iter;
     resp_t*       curr_resp;
     data_pkg_t*   curr_pkg;
 };
@@ -78,7 +78,7 @@ void pc_get_next_session(cli_state_t* cli_state)
     //printf("current session idx=%d\n", resp_queue_idx);
     pcap_state_t* state = session_queue[resp_queue_idx++];
     cli_state->state = state;
-    cli_state->resp_iter = flist_iter(state->resp_list);
+    cli_state->resp_iter = flist_new_iter(state->resp_list);
     cli_state->curr_resp = NULL;
     cli_state->curr_pkg = NULL;
 }
@@ -100,16 +100,16 @@ void pc_get_next_resp(cli_state_t* cli_state)
 
     cli_state->curr_resp = flist_each(&cli_state->resp_iter);
     if( !cli_state->curr_resp ) {
-        cli_state->resp_iter = flist_iter(state->resp_list);
+        cli_state->resp_iter = flist_new_iter(state->resp_list);
         cli_state->curr_resp = flist_each(&cli_state->resp_iter);
     }
 
     // reset pkg iter
     resp_t* resp = cli_state->curr_resp;
-    cli_state->pkg_iter = flist_iter(resp->pkg_list);
+    cli_state->pkg_iter = flist_new_iter(resp->pkg_list);
     cli_state->curr_pkg = NULL; // must set NULL, due to getlatency need it
     //dump_pkgs(state);
-    if ( flist_isempty((pl_mgr)(&cli_state->pkg_iter)) ) {
+    if ( flist_isempty((flist*)(&cli_state->pkg_iter)) ) {
         abort();
     }
 }
@@ -129,14 +129,14 @@ void pc_get_next_pkg(cli_state_t* cli_state)
     cli_state->curr_pkg = flist_each(&cli_state->pkg_iter);
     if( !cli_state->curr_pkg ) {
         printf("get_next_pkg:pkg_list isempty=%d\n",
-                flist_isempty((pl_mgr)(&cli_state->pkg_iter)));
+                flist_isempty((flist*)(&cli_state->pkg_iter)));
         abort();
     }
 }
 
 int  pc_is_last_pkg(cli_state_t* cli_state)
 {
-    liter t_iter = cli_state->pkg_iter;
+    flist_iter t_iter = cli_state->pkg_iter;
     data_pkg_t* pkg = flist_each(&t_iter);
     if( !pkg )
         return 1;
@@ -174,7 +174,7 @@ int  pc_get_next_pkg_latency(cli_state_t* cli_state)
     }
 
     data_pkg_t* curr_pkg = cli_state->curr_pkg;
-    liter t_iter = cli_state->pkg_iter;
+    flist_iter t_iter = cli_state->pkg_iter;
     data_pkg_t* next_pkg = flist_each(&t_iter);
 
     if( !next_pkg ) {
@@ -427,8 +427,8 @@ void process_data(session_t* sess, fapp_data_t* app_data, void* ud)
 static
 void deal_redundant(session_t* sess)
 {
-    pl_mgr        new_pkg_list = NULL;
-    pl_mgr        new_resp_list = flist_create();
+    flist*        new_pkg_list = NULL;
+    flist*        new_resp_list = flist_create();
     int           index = 0;
     sess_state_t* sess_state = sess->ud;
     pcap_state_t* state = sess_state->state;

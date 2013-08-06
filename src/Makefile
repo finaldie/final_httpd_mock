@@ -3,7 +3,7 @@ BIN_PATH = ../bin
 
 FLIB_PATH = ../flibs/final_libraries
 INCLUDE_PATH = include
-LIBS_PATH = libs
+LIBS_PATH = lib64
 INSTALL_PATH = $(FLIB_PATH)/$(BIN_PATH)
 
 CC = gcc

@@ -3,7 +3,7 @@ BIN_DIR_NAME = bin
 CFG_DIR_NAME = etc
 
 all:
-	(cd flibs && make)
+	(cd flibs && make all64)
 	cd src && make
 check:
 	cd src/test && make && make run_test

@@ -9,9 +9,9 @@
 #include <pthread.h>
 #include <signal.h>
 
-#include "read_conf.h"
+#include "flibs/fread_conf.h"
+#include "flibs/flog_inc.h"
 #include "http_handlers.h"
-#include "log_inc.h"
 
 // global vars
 int max_open_files = 0;
@@ -78,7 +78,7 @@ void read_config(const char* filename, service_arg_t* sargs)
     // init args
     init_service_args(sargs);
 
-    void _read_pairs(char* key, char* value) {
+    void _read_pairs(const char* key, const char* value) {
         if ( strcmp(key, "listen_port") == 0 ) {
             sargs->port = atoi(value);
         } else if ( strcmp(key, "max_connection") == 0 ) {
@@ -146,7 +146,7 @@ void read_config(const char* filename, service_arg_t* sargs)
         }
     }
 
-    int ret = GenConfig(filename, _read_pairs);
+    int ret = fload_config(filename, _read_pairs);
     if ( ret ) {
         printf("configuration error, please check it\n");
         exit(1);
