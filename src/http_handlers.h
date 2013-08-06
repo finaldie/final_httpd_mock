@@ -3,6 +3,7 @@
 
 #include "flibs/fev_buff.h"
 #include "flibs/fev_timer.h"
+#include "flibs/fev_timer_service.h"
 #include "flibs/ftu_inc.h"
 
 #define FHTTP_MAX_LOG_FILENAME_SIZE 256
@@ -58,20 +59,6 @@ struct client;
 struct timer_mgr;
 struct client_mgr;
 
-typedef struct timer_node {
-    struct client*     cli;
-    struct timer_node* prev;
-    struct timer_node* next;
-    struct timer_mgr*  owner;
-    int                timeout; // unit [ms]
-} timer_node;
-
-typedef struct timer_mgr {
-    timer_node* head;
-    timer_node* tail;
-    int         count;
-} timer_mgr;
-
 typedef struct response_opt {
     void (*init)(struct client*);
     void (*free)(struct client*);
@@ -81,14 +68,15 @@ typedef struct response_opt {
 } resp_opt;
 
 typedef struct client {
-    int         fd;
-    int         offset;
-    int         request_complete;
-    int         response_complete;
-    my_time     last_active;
-    int         last_latency;
-    fev_buff*   evbuff;
-    timer_node* tnidx;
+    int          fd;
+    int          offset;
+    int          request_complete;
+    int          response_complete;
+    my_time      last_active;
+    int          last_latency;
+    fev_buff*    evbuff;
+    ftimer_node* response_timer;
+    ftimer_node* shutdown_timer;
     struct client_mgr* owner;
 
     resp_opt    opt;
@@ -96,11 +84,6 @@ typedef struct client {
 } client;
 
 typedef struct client_mgr {
-    timer_mgr  tm_main;
-    timer_mgr  tm_minor;
-    timer_mgr* current;
-    timer_mgr* backup;
-
     service_arg_t* sargs;
     int        current_conn;
     size_t     buffsize;

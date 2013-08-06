@@ -18,7 +18,6 @@
 #include "http_load_pcap.h"
 
 #define FHTTP_REPONSE_HEADER_SIZE        2048
-#define FHTTP_MAX_WAIT_TIME_FOR_1ST_REQ  (1000 * 10)
 #define FHTTP_1MS                        (1000000l)
 
 /**
@@ -32,97 +31,12 @@
 
 static fev_state* fev = NULL;
 static client_mgr* cli_mgr = NULL;
+static fev_timer_svc* ftm_svc = NULL;
 extern log_file_t* glog;
 
 struct resp_tbl_t {
    register_resp_init init;
 } resp_tbl[RESP_TYPE_NUM];
-
-static
-timer_node* timer_node_create(client* cli, int timeout)
-{
-    if ( cli->tnidx ) {
-        cli->tnidx->timeout = timeout;
-        return cli->tnidx;
-    }
-
-    timer_node* tnode = malloc(sizeof(timer_node));
-    memset(tnode, 0, sizeof(*tnode));
-    cli->tnidx = tnode;
-    tnode->cli = cli;
-    tnode->timeout = timeout;
-    tnode->prev = tnode->next = NULL;
-
-    return tnode;
-}
-
-static
-void timer_node_delete(timer_mgr* mgr, timer_node* node)
-{
-    if ( !node )
-        return;
-    if ( !node->owner )
-        goto RELEASE;
-
-    //assert(node->owner == mgr);
-    if ( !node->prev ) { // node at head
-        mgr->head = node->next;
-        if ( mgr->head ) mgr->head->prev = NULL;
-    } else if ( !node->next ) { // node at tail
-        mgr->tail = node->prev;
-        if ( mgr->tail ) mgr->tail->next = NULL;
-    } else { // node at middle
-        node->prev->next = node->next;
-        node->next->prev = node->prev;
-    }
-
-    node->owner = NULL;
-    mgr->count--;
-    if ( !mgr->count ) {
-        mgr->head = mgr->tail = NULL;
-    }
-
-RELEASE:
-    free(node);
-}
-
-static
-int timer_node_push(timer_mgr* mgr, timer_node* node)
-{
-    if ( node->owner ) return 1;
-    if ( mgr->head == mgr->tail && mgr->head == NULL ) {
-        mgr->head = mgr->tail = node;
-    } else {
-        node->prev = mgr->tail;
-        mgr->tail->next = node;
-        mgr->tail = node;
-    }
-
-    node->owner = mgr;
-    mgr->count++;
-    return 0;
-}
-
-static
-timer_node* timer_node_pop(timer_mgr* mgr)
-{
-    if ( !mgr->head ) {
-        return NULL;
-    } else {
-        timer_node* node = mgr->head;
-        mgr->head = mgr->head->next;
-        if ( !mgr->head ) {
-            mgr->tail = mgr->head;
-        } else {
-            mgr->head->prev = NULL;
-        }
-
-        node->prev = node->next = NULL;
-        node->owner = NULL;
-        mgr->count--;
-        return node;
-    }
-}
 
 static
 client* create_client()
@@ -137,9 +51,19 @@ static
 void destroy_client(client* cli)
 {
     int fd = fevbuff_destroy(cli->evbuff);
-    timer_node_delete(cli->owner->current, cli->tnidx);
-    cli->owner->current_conn--;
-    cli->opt.free(cli);
+    fev_tmsvc_del_timer(ftm_svc, cli->response_timer);
+    fev_tmsvc_del_timer(ftm_svc, cli->shutdown_timer);
+    cli->response_timer = NULL;
+    cli->shutdown_timer = NULL;
+
+    if( cli->owner ) {
+        cli->owner->current_conn--;
+    }
+
+    if( cli->opt.free ) {
+        cli->opt.free(cli);
+    }
+
     free(cli);
     close(fd);
     FLOG_DEBUG(glog, "destroy client fd=%d", fd);
@@ -150,8 +74,6 @@ client_mgr* create_client_mgr(size_t max_response_size)
 {
     client_mgr* mgr = malloc(sizeof(client_mgr));
     memset(mgr, 0, sizeof(client_mgr));
-    mgr->current = &mgr->tm_main;
-    mgr->backup = &mgr->tm_minor;
     mgr->sargs = NULL;
     mgr->current_conn = 0;
     mgr->buffsize = FHTTP_REPONSE_HEADER_SIZE + max_response_size + FHTTP_CRLF_SIZE + 1;
@@ -183,79 +105,75 @@ int gen_random_latency(int min, int max)
 }
 
 static
-void http_on_timer(fev_state* fev, void* arg)
+void connection_shutdown_cb(fev_state* fev, void* arg)
 {
-    //FLOG_DEBUG(glog, "timer trigger");
-    client_mgr* mgr = (client_mgr*)arg;
-    timer_node* node = timer_node_pop(mgr->current);
-    if ( !node ) return;
+    FLOG_INFO(glog, "connection shutdown, fd=%d", fev_get_fd(fev));
 
-    my_time now;
-    get_cur_time(&now);
+    client* cli = (client*)arg;
+    // we should set this to NULL, since the timer service will delete this timer node,
+    // so that this pointer is invalid to use
+    cli->shutdown_timer = NULL;
+    destroy_client(cli);
+}
 
-    while ( node ) {
-        int diff = get_diff_time(&node->cli->last_active, &now) / 1000;
-        int fd = node->cli->fd;
-        FLOG_DEBUG(glog, "on timer: fd=%d, diff=%d, node_timeout=%d", fd, diff, node->timeout);
+static
+void send_response_cb(fev_state* fev, void* arg)
+{
+    FLOG_DEBUG(glog, "timer trigger");
+    client* cli = (client*)arg;
+    client_mgr* mgr = cli->owner;
 
-        if ( node->cli->response_complete < node->cli->request_complete ) {
-            if ( diff >= node->timeout ) {
-                // we need to send respose
-                int ret = -1, complete = 0;
-                ret = node->cli->opt.handler(node->cli, &complete);
+    FLOG_DEBUG(glog, "send response: fd=%d", cli->fd);
 
-                if ( ret < 0 ) {
-                    // something goes wrong, the client has been destroyed, go
-                    // to the next node
-                    FLOG_DEBUG(glog, "on timer, but buffer cannot write, fd=%d", fd);
-                    goto pop_next_node;
-                }
+    // we should set this to NULL, since the timer service will delete this timer node,
+    // so that this pointer is invalid to use
+    cli->response_timer = NULL;
 
-                // update last active
-                get_cur_time(&node->cli->last_active);
-
-                // when we found the server timeout == 0, we can fast shutdown
-                // the connection instead of going to next timer round checking
-                if ( complete ) {
-                    if( mgr->sargs->timeout == 0 ) {
-                        destroy_client(node->cli);
-                        FLOG_DEBUG(glog, "on timer, timeout==0 fast shutdown, fd=%d", fd);
-                        goto pop_next_node;
-                    } else {
-                        // we are finished one request, then reset timeout
-                        node->timeout = mgr->sargs->timeout;
-                        node->cli->response_complete++;
-                        FLOG_DEBUG(glog, "on timer: fd=%d, we have finished a request, reset timeout to %d",
-                                   fd, mgr->sargs->timeout);
-                    }
-                } else {
-                    // update latency
-                    node->timeout = node->cli->opt.get_latency(node->cli);
-                }
-            }
-
-            timer_node_push(mgr->backup, node);
-        } else if ( node->cli->response_complete == node->cli->request_complete ) {
-            // check whether client out of time
-            if ( diff >= node->timeout ) {
-                destroy_client(node->cli);
-                FLOG_WARN(glog, "delete timeout, fd=%d", fd);
-            } else {
-                timer_node_push(mgr->backup, node);
-            }
-        } else {
-            destroy_client(node->cli);
-            FLOG_ERROR(glog, "on timer, internal error, fd=%d", fd);
-        }
-
-pop_next_node:
-        node = timer_node_pop(mgr->current);
+    if ( cli->response_complete >= cli->request_complete ) {
+        FLOG_ERROR(glog, "response_complete == request_complete, shouldn't go ahead");
+        return;
     }
 
-    // swap tmp timer node header and tailer
-    timer_mgr* tmp = mgr->current;
-    mgr->current = mgr->backup;
-    mgr->backup = tmp;
+    // we need to send response
+    int ret = -1, complete = 0;
+    ret = cli->opt.handler(cli, &complete);
+
+    if ( ret < 0 ) {
+        // something goes wrong, the client has been destroyed
+        FLOG_DEBUG(glog, "send response, but buffer cannot write, fd=%d", cli->fd);
+        return;
+    }
+
+    // when we found the server timeout == 0, we can fast shutdown
+    // the connection instead of going to next timer round checking
+    if ( complete ) {
+        if( mgr->sargs->timeout == 0 ) {
+            destroy_client(cli);
+            FLOG_DEBUG(glog, "send response, timeout==0 fast shutdown, fd=%d", cli->fd);
+            return;
+        } else {
+            // we are finished one request, then reset timeout
+            cli->response_complete++;
+
+            if( fev_tmsvc_reset_timer(ftm_svc, cli->shutdown_timer) ) {
+                FLOG_ERROR(glog, "reset shutdown timer failed, fd=%d", cli->fd);
+                destroy_client(cli);
+                return;
+            }
+
+            FLOG_DEBUG(glog, "send response: fd=%d, we have finished a request, reset timeout to %d",
+                       cli->fd, mgr->sargs->timeout);
+        }
+    } else {
+        // if not complete, we need to get the new latency and create a timer for it
+        int next_resp_latency = cli->opt.get_latency(cli);
+        cli->response_timer = fev_tmsvc_add_timer(ftm_svc, next_resp_latency, send_response_cb, cli);
+        if( !cli->response_timer ) {
+            FLOG_ERROR(glog, "create new response timer failed, fd=%d", cli->fd);
+            destroy_client(cli);
+            return;
+        }
+    }
 }
 
 static
@@ -335,9 +253,13 @@ void http_read(fev_state* fev, fev_buff* evbuff, void* arg)
         }
     }
 
-    // create timer node
-    timer_node* tnode = timer_node_create(cli, latency);
-    timer_node_push(cli->owner->current, tnode);
+    // create response timer node
+    cli->response_timer = fev_tmsvc_add_timer(ftm_svc, latency, send_response_cb, cli);
+    if( !cli->response_timer ) {
+        FLOG_ERROR(glog, "create response timer failed, fd=%d", cli->fd);
+        destroy_client(cli);
+        return;
+    }
 
     // pop last consumed data
     fevbuff_pop(evbuff, offset+2);
@@ -359,32 +281,40 @@ void http_accept(fev_state* fev, int fd, void* ud)
     client_mgr* mgr = (client_mgr*)ud;
     if ( fd >= mgr->sargs->max_queue_len ) {
         FLOG_ERROR(glog, "fd > max open files, cannot accept pid=%d", getpid());
-        goto EG_ERROR;
+        close(fd);
+        return;
     }
 
     client* cli = create_client();
     fev_buff* evbuff = fevbuff_new(fev, fd, http_read, http_error, cli);
-    if( evbuff ) {
-        cli->fd = fd;
-        cli->last_latency = FHTTP_INVALID_LATENCY;
-        cli->evbuff = evbuff;
-        cli->owner = mgr;
-        cli->owner->current_conn++;
-        get_cur_time(&cli->last_active);
-        timer_node* tnode = timer_node_create(cli, FHTTP_MAX_WAIT_TIME_FOR_1ST_REQ);
-        timer_node_push(cli->owner->current, tnode);
-
-        // init client private opt
-        resp_tbl[cli_mgr->sargs->response_type].init(cli);
-        // call client's init
-        cli->opt.init(cli);
-
-        FLOG_DEBUG(glog, "fev_buff created fd=%d", fd);
-    } else {
+    if( !evbuff ) {
         FLOG_ERROR(glog, "cannot create evbuff fd=%d", fd);
-EG_ERROR:
-        close(fd);
+        goto EG_ERROR;
     }
+
+    cli->fd = fd;
+    cli->last_latency = FHTTP_INVALID_LATENCY;
+    cli->evbuff = evbuff;
+    cli->owner = mgr;
+    cli->owner->current_conn++;
+
+    // init client private opt
+    resp_tbl[cli_mgr->sargs->response_type].init(cli);
+    // call client's init
+    cli->opt.init(cli);
+
+    // create shutdown timer node
+    cli->shutdown_timer = fev_tmsvc_add_timer(ftm_svc, mgr->sargs->timeout, connection_shutdown_cb, cli);
+    if( !cli->shutdown_timer ) {
+        FLOG_ERROR(glog, "create response timer failed, fd=%d", cli->fd);
+        goto EG_ERROR;
+    }
+
+    FLOG_DEBUG(glog, "fev_buff created fd=%d", fd);
+    return;
+
+EG_ERROR:
+    destroy_client(cli);
 }
 
 static
@@ -431,6 +361,12 @@ int init_service(service_arg_t* sargs)
     }
     FLOG_INFO(glog, "fev create successful");
 
+    ftm_svc = fev_create_timer_service(fev, 1);
+    if( !ftm_svc ) {
+        FLOG_ERROR(glog, "init timer service failed");
+        exit(1);
+    }
+
     register_resp_handlers();
     cli_mgr = create_client_mgr(sargs->max_response_size);
     cli_mgr->sargs = sargs;
@@ -457,14 +393,6 @@ int init_service(service_arg_t* sargs)
 
 int start_service()
 {
-    // every 10ms, the timer will wake up
-    fev_timer* resp_timer = fev_add_timer_event(fev, 10 * FHTTP_1MS, 10 * FHTTP_1MS,
-                                                http_on_timer, cli_mgr);
-    if ( !resp_timer ) {
-        FLOG_ERROR(glog, "register response timer failed");
-        exit(1);
-    }
-
     fev_timer* status_timer = fev_add_timer_event(fev, 1000 * FHTTP_1MS, 1000 * FHTTP_1MS,
                                                 http_show_status, cli_mgr);
     if ( !status_timer ) {
