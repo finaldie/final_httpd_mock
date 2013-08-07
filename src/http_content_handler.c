@@ -23,19 +23,17 @@
 "Content-Type: text/html\r\n" \
 "\r\n"
 
-#define fake_response_body "%s\r\n"
+#define fake_response_body "%s"
 #define FHTTP_REPONSE_HEADER_SIZE (sizeof(fake_response_header) + 10 )
 
 static
 int create_response(char* buf, size_t buffsize, size_t size)
 {
-    if ( size > (buffsize - 3) ) return 0;
+    if ( size > (buffsize - 1) ) return 0;
 
     // fill all bytes with 'F'
     memset(buf, 70, size);
-    buf[size] = '\r';
-    buf[size+1] = '\n';
-    buf[size+2] = '\0';
+    buf[size] = '\0';
 
     return size + FHTTP_CRLF_SIZE;
 }
@@ -56,7 +54,7 @@ int content_resp_handler(client* cli, int* complete)
     // 2. fill whole response
     int total_len = snprintf(mgr->response_buf, mgr->buffsize,
                              fake_response_header fake_response_body,
-                             response_size + (int)FHTTP_CRLF_SIZE * 2,
+                             response_size,
                              mgr->response_body_buf);
     // 3. send out
     *complete = 1;
