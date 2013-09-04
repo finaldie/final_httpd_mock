@@ -1,3 +1,13 @@
+Lastest Versions:
+
++--------+--------------------+------------+--------------------------------------+
+| Branch | Lastest Stable Tag |  Released  | Description                          |
++--------+--------------------+------------+--------------------------------------+
+|  0.2   |                    |            | Under development                    |
++--------+--------------------+------------+--------------------------------------+
+|  0.1   | 0.1.3              | 2013-07-10 | 4 basic types of response simulation |
++--------+--------------------+------------+--------------------------------------+
+
 Description:
 
     A http mock service, for performance testing, debugging or something else.
@@ -16,3 +26,20 @@ How to Run:
     2. make
     3. make install
     4. cd bin && ./httpd_mock -c ../etc/httpd_mock.cfg
+
+ChangeLog:
+
+0.1.4 2013-09-04
+    Cleanup the source code environment
+0.1.3 2013-07-10
+    Issue #6: Support deal with muddled tcp/ip package and retransmit package
+0.1.2 2013-04-27
+    Fix coredump issue when handle the un-http response header format data
+0.1.1 2013-04-08
+    Support loading pcap file, to simulate the real server response
+
+0.1.0 2012-12-07
+    basic framework, support 3 types response:
+    * specific length response
+    * chunked response
+    * mix type
