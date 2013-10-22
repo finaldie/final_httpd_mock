@@ -1,10 +1,10 @@
 #include <stdint.h>
 #include "flist.h"
-#include "tu_inc.h"
+#include "ftu_inc.h"
 #include "http_load_pcap.h"
 
 typedef struct pcap_state_t{
-    pl_mgr   resp_list;
+    flist*   resp_list;
     uint32_t resp_cnt;
     struct timeval syn_ts; // timestamp of creation
 } pcap_state_t;
@@ -18,15 +18,15 @@ typedef struct data_pkg_t{
 } data_pkg_t;
 
 typedef struct resp_t{
-    pl_mgr      pkg_list;
+    flist*      pkg_list;
     uint32_t    pkg_cnt;
     struct timeval cts; // timestamp of creation
 } resp_t;
 
 struct _cli_state_t {
     pcap_state_t* state;
-    liter         resp_iter;
-    liter         pkg_iter;
+    flist_iter    resp_iter;
+    flist_iter    pkg_iter;
     resp_t*       curr_resp;
     data_pkg_t*   curr_pkg;
 };

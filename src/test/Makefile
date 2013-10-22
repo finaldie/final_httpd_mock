@@ -2,8 +2,8 @@ TARGET = test
 BIN_PATH = bin
 
 FLIB_PATH = ../../flibs/final_libraries
-INCLUDE_PATH = include
-LIBS_PATH = libs
+INCLUDE_PATH = include/flibs
+LIBS_PATH = lib64
 INSTALL_PATH = bin
 
 CC = gcc
