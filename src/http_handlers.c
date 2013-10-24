@@ -51,8 +51,8 @@ static
 void destroy_client(client* cli)
 {
     int fd = fevbuff_destroy(cli->evbuff);
-    fev_tmsvc_del_timer(ftm_svc, cli->response_timer);
-    fev_tmsvc_del_timer(ftm_svc, cli->shutdown_timer);
+    fev_tmsvc_del_timer(cli->response_timer);
+    fev_tmsvc_del_timer(cli->shutdown_timer);
     cli->response_timer = NULL;
     cli->shutdown_timer = NULL;
 
@@ -155,7 +155,7 @@ void send_response_cb(fev_state* fev, void* arg)
             // we are finished one request, then reset timeout
             cli->response_complete++;
 
-            if( fev_tmsvc_reset_timer(ftm_svc, cli->shutdown_timer) ) {
+            if( fev_tmsvc_reset_timer(cli->shutdown_timer) ) {
                 FLOG_ERROR(glog, "reset shutdown timer failed, fd=%d", cli->fd);
                 destroy_client(cli);
                 return;
@@ -361,7 +361,7 @@ int init_service(service_arg_t* sargs)
     }
     FLOG_INFO(glog, "fev create successful");
 
-    ftm_svc = fev_create_timer_service(fev, 1);
+    ftm_svc = fev_create_timer_service(fev, 1, FEV_TMSVC_SINGLE_LINKED);
     if( !ftm_svc ) {
         FLOG_ERROR(glog, "init timer service failed");
         exit(1);
