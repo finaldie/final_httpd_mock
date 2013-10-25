@@ -386,7 +386,9 @@ void assemble_package(sess_state_t* sess_state, resp_t* resp, data_pkg_t* pkg)
 }
 
 static
-void process_data(session_t* sess, fapp_data_t* app_data, void* ud)
+void process_data(session_t* sess,
+                  fapp_data_t* app_data,
+                  void* ud __attribute__((unused)))
 {
     sess_state_t* sess_state = sess->ud;
     pcap_state_t* state = sess_state->state;
@@ -576,7 +578,8 @@ void loading_pkg(fsession_event event, session_t* sess, fapp_data_t* app_data, v
 }
 
 static
-int cleanup_foreach(session_t* sess, void* ud)
+int cleanup_foreach(session_t* sess,
+                    void* ud __attribute__((unused)))
 {
     //printf("cleanup....................................\n");
     destroy_session(sess);

@@ -1,6 +1,6 @@
 #include <stdint.h>
-#include "flist.h"
-#include "ftu_inc.h"
+#include "flibs/flist.h"
+#include "flibs/ftu_inc.h"
 #include "http_load_pcap.h"
 
 typedef struct pcap_state_t{
@@ -38,9 +38,10 @@ typedef struct {
     int           valid;
 } sess_state_t;
 
-int is_redundant(pcap_state_t* sess, int sess_index)
+int is_redundant(pcap_state_t* sess,
+                 int sess_index __attribute__((unused)))
 {
-    int seq_arr[5000];
+    uint32_t seq_arr[5000];
     int flag = 0;
     int resp_index, package_index=0;
     pcap_state_t* state = sess;
@@ -77,7 +78,8 @@ int is_redundant(pcap_state_t* sess, int sess_index)
     return flag;
 }
 
-int is_muddled(pcap_state_t* sess, int sess_index )
+int is_muddled(pcap_state_t* sess,
+               int sess_index __attribute__((unused)))
 {
     uint32_t pre_seq = 0;
     int resp_index = 1;

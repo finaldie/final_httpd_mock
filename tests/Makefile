@@ -1,14 +1,14 @@
 TARGET = test
 BIN_PATH = bin
 
-FLIB_PATH = ../../flibs/final_libraries
-INCLUDE_PATH = include/flibs
-LIBS_PATH = lib64
+INCLUDE_PATH = ../include
+LIBS_PATH = ../lib64
 INSTALL_PATH = bin
 
 CC = gcc
-INC = -I$(FLIB_PATH)/$(INCLUDE_PATH) -I../
-LL = -L$(FLIB_PATH)/$(LIBS_PATH)
+INC = -I$(INCLUDE_PATH) -I../src
+LL = -L$(LIBS_PATH)
+
 LIBS = -lfhash \
 	   -lfmempool \
 	   -lpthread \
@@ -28,25 +28,25 @@ LIBS = -lfhash \
 
 SRCS = main.c \
        t_tcp.c \
-       ../http_load_pcap.c
+       ../src/http_load_pcap.c
 
 COPY_FILES =
 
 DEPS = $(patsubst %.c,%.d,$(SRCS))
 OBJS = $(patsubst %.c,%.o,$(SRCS))
-CFLAGS = -Wall -Werror -g -O2
+CFLAGS = -Wall -Wextra -Werror -Wno-deprecated -g -O2
 
-all:$(TARGET)
+all: $(TARGET)
 $(TARGET):$(OBJS) $(DEPS)
 	$(CC) $(CFLAGS) $(INC) $(LL) -o $(TARGET) $(OBJS) $(LIBS)
 
 
-%.d:%.c
+%.d: %.c
 	$(CC) $(INC) -MM $< > $@
-%.o:%.c 
+%.o: %.c 
 	$(CC) $(CFLAGS) $(INC) -c $< 
 
-run_test:
+check:
 	./$(TARGET)
 
 .PHONY:clean

@@ -1,14 +1,12 @@
 TARGET = httpd_mock
 BIN_PATH = ../bin
 
-FLIB_PATH = ../flibs/final_libraries
-INCLUDE_PATH = include
-LIBS_PATH = lib64
-INSTALL_PATH = $(FLIB_PATH)/$(BIN_PATH)
+INCLUDE_PATH = ../include
+LIBS_PATH = ../lib64
 
 CC = gcc
-INC = -I$(FLIB_PATH)/$(INCLUDE_PATH)
-LL = -L$(FLIB_PATH)/$(LIBS_PATH)
+INC = -I$(INCLUDE_PATH)
+LL = -L$(LIBS_PATH)
 LIBS = -lfhash \
 	   -lfmempool \
 	   -lpthread \
@@ -24,6 +22,7 @@ LIBS = -lfhash \
 	   -lfhash \
 	   -lfpcap_conv \
 	   -lpcap \
+	   -lhttp_parser \
 	   -lrt
 
 SRCS = main.c \
@@ -39,15 +38,16 @@ COPY_FILES =
 DEPS = $(patsubst %.c,%.d,$(SRCS))
 OBJS = $(patsubst %.c,%.o,$(SRCS))
 
-CFLAGS = -Wall -Werror -g -O2
+CFLAGS = -Wall -Wextra -Werror -Wno-deprecated -g -O2
 
-all:$(TARGET)
-$(TARGET):$(OBJS) $(DEPS)
+all: $(TARGET)
+
+$(TARGET): $(OBJS) $(DEPS)
 	$(CC) $(CFLAGS) $(INC) $(LL) -o $(TARGET) $(OBJS) $(LIBS)
 
-%.d:%.c
+%.d: %.c
 	$(CC) $(INC) -MM $< > $@
-%.o:%.c 
+%.o: %.c 
 	$(CC) $(CFLAGS) $(INC) -c $< 
 
 .PHONY:clean

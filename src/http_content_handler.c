@@ -66,13 +66,13 @@ void content_resp_init(client* cli)
 }
 
 static inline
-void content_resp_free(client* cli)
+void content_resp_free(client* cli __attribute__((unused)))
 {
 
 }
 
 static inline
-void content_pre_send(client* cli)
+void content_pre_send(client* cli __attribute__((unused)))
 {
 
 }

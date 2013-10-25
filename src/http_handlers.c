@@ -117,7 +117,8 @@ void connection_shutdown_cb(fev_state* fev, void* arg)
 }
 
 static
-void send_response_cb(fev_state* fev, void* arg)
+void send_response_cb(fev_state* fev __attribute__((unused)),
+                      void* arg)
 {
     FLOG_DEBUG(glog, "timer trigger");
     client* cli = (client*)arg;
@@ -177,7 +178,9 @@ void send_response_cb(fev_state* fev, void* arg)
 }
 
 static
-void http_read(fev_state* fev, fev_buff* evbuff, void* arg)
+void http_read(fev_state* fev __attribute__((unused)),
+               fev_buff* evbuff,
+               void* arg)
 {
     client* cli = (client*)arg;
     int fd = cli->fd;
@@ -268,7 +271,9 @@ void http_read(fev_state* fev, fev_buff* evbuff, void* arg)
 }
 
 static
-void http_error(fev_state* fev, fev_buff* evbuff, void* arg)
+void http_error(fev_state* fev __attribute__((unused)),
+                fev_buff* evbuff __attribute__((unused)),
+                void* arg)
 {
     FLOG_DEBUG(glog, "eg error fd=%d", ((client*)arg)->fd);
     destroy_client((client*)arg);
@@ -318,7 +323,8 @@ EG_ERROR:
 }
 
 static
-void http_show_status(fev_state* fev, void* arg)
+void http_show_status(fev_state* fev __attribute__((unused)),
+                      void* arg)
 {
     client_mgr* mgr = (client_mgr*)arg;
 
@@ -328,7 +334,7 @@ void http_show_status(fev_state* fev, void* arg)
 static
 void register_resp(resp_type_t type, register_resp_init init)
 {
-    resp_tbl[type].init = init;   
+    resp_tbl[type].init = init;
 }
 
 static
@@ -350,7 +356,6 @@ int init_listen(service_arg_t* sargs)
     sargs->listen_fd = listen_fd;
     return 0;
 }
-
 
 int init_service(service_arg_t* sargs)
 {
