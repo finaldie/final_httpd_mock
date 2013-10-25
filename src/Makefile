@@ -38,7 +38,7 @@ COPY_FILES =
 DEPS = $(patsubst %.c,%.d,$(SRCS))
 OBJS = $(patsubst %.c,%.o,$(SRCS))
 
-CFLAGS = -Wall -Wextra -Werror -Wno-deprecated -g -O2
+CFLAGS = -Wall -Wextra -Werror -g -O2
 
 all: $(TARGET)
 
