@@ -188,16 +188,19 @@ void http_read(fev_state* fev __attribute__((unused)),
     // we have data need to process
     char* read_buf = fevbuff_rawget(evbuff);
 
-    // http_parser test
+    // parse and execute
     size_t nparsed = http_parser_execute(cli->parser, &cli->settings, read_buf, bytes);
-    printf("http_parser nparsed=%zu\n", nparsed);
 
     if ( nparsed != (size_t)bytes ) {
-        printf("Fatal error during parsing http request\n");
+        FLOG_FATAL(glog, "Fatal error during parsing http request, fd=%d\n", fd);
+        destroy_client(cli);
+    } else if ( cli->parser->upgrade ) {
+        FLOG_FATAL(glog, "Fatal error during parsing http request, found upgrade, not supported yet, fd=%d\n", fd);
+        destroy_client(cli);
+    } else {
+        // pop last consumed data
+        fevbuff_pop(evbuff, nparsed);
     }
-
-    // pop last consumed data
-    fevbuff_pop(evbuff, nparsed);
 }
 
 static
@@ -223,72 +226,8 @@ http_txn* fhttp_create_txn()
     return txn;
 }
 
-int http_msg_begin(http_parser* parser)
-{
-    (void)parser;
-    printf("msg begin\n");
-    printf("msg begin: http %d.%d, method=%d, nread=%u\n", parser->http_major, parser->http_minor, parser->method, parser->nread);
-    return 0;
-}
-
-int http_on_url(http_parser* parser, const char* at, size_t length)
-{
-    printf("http_on_url: http %d.%d, method=%d, nread=%u\n", parser->http_major, parser->http_minor, parser->method, parser->nread);
-    char tmp[1024];
-    memset(tmp, 0, 1024);
-    strncpy(tmp, at, length);
-    printf("http_on_url: %s\n", tmp);
-    return 0;
-}
-
-int http_on_status_complete(http_parser* parser)
-{
-    (void)parser;
-    printf("status complete, nread=%u\n", parser->nread);
-    return 0;
-}
-
-int http_on_hdr_field(http_parser* parser, const char* at, size_t length)
-{
-    (void)parser;
-    printf("http_on_hdr_field: http %d.%d, method=%d, nread=%u\n", parser->http_major, parser->http_minor, parser->method, parser->nread);
-    char tmp[1024];
-    memset(tmp, 0, 1024);
-    strncpy(tmp, at, length);
-    printf("http_on_hdr_field: %s\n", tmp);
-    return 0;
-}
-
-int http_on_hdr_value(http_parser* parser, const char* at, size_t length)
-{
-    (void)parser;
-    char tmp[1024];
-    memset(tmp, 0, 1024);
-    strncpy(tmp, at, length);
-    printf("http_on_hdr_value: %s, nread=%u\n", tmp, parser->nread);
-    return 0;
-}
-
-int http_on_hdr_complete(http_parser* parser)
-{
-    (void)parser;
-    printf("http_hdr_complete: http %d.%d, method=%d, nread=%u\n", parser->http_major, parser->http_minor, parser->method, parser->nread);
-    return 0;
-}
-
-int http_on_body(http_parser* parser, const char* at, size_t length)
-{
-    (void)parser;
-    char tmp[1024];
-    memset(tmp, 0, 1024);
-    strncpy(tmp, at, length);
-    printf("http_on_body: %s, nread=%u\n", tmp, parser->nread);
-    return 0;
-}
-
 int http_on_msg_complete(http_parser* parser)
 {
-    printf("msg complete, nread=%u\n", parser->nread);
     client* cli = (client*)parser->data;
     // header parser complete
     cli->request_complete++;
@@ -299,7 +238,6 @@ int http_on_msg_complete(http_parser* parser)
                          "while the old one has not been responsed, "
                          "request_cl_cnt=%d, response_cl_cnt=%d, fd=%d",
                          cli->request_complete, cli->response_complete, cli->fd);
-        destroy_client(cli);
         return 1;
     }
 
@@ -311,8 +249,9 @@ int http_on_msg_complete(http_parser* parser)
     if( !latency ) {
         ret = cli->opt.handler(cli, &complete);
         if ( ret < 0 ) {
-            // something goes wrong, client has been destroyed
-            FLOG_DEBUG(glog, "buffer cannot write, fd=%d", cli->fd);
+            // something goes wrong, there is only one possible reason:
+            // the fd has been broken by kernel
+            FLOG_FATAL(glog, "buffer cannot write, fd=%d", cli->fd);
             return 1;
         }
 
@@ -335,7 +274,6 @@ int http_on_msg_complete(http_parser* parser)
     cli->response_timer = fev_tmsvc_add_timer(ftm_svc, latency, send_response_cb, cli);
     if( !cli->response_timer ) {
         FLOG_ERROR(glog, "create response timer failed, fd=%d", cli->fd);
-        destroy_client(cli);
         return 1;
     }
 
@@ -384,13 +322,13 @@ void http_accept(fev_state* fev, int fd, void* ud)
     cli->parser->data = cli;
 
     // fill the parser callbacks
-    cli->settings.on_message_begin = http_msg_begin;
-    cli->settings.on_url = http_on_url;
-    cli->settings.on_status_complete = http_on_status_complete; // for response
-    cli->settings.on_header_field = http_on_hdr_field;
-    cli->settings.on_header_value = http_on_hdr_value;
-    cli->settings.on_headers_complete = http_on_hdr_complete;
-    cli->settings.on_body = http_on_body;
+    cli->settings.on_message_begin = NULL;
+    cli->settings.on_url = NULL;
+    cli->settings.on_status_complete = NULL; // for response
+    cli->settings.on_header_field = NULL;
+    cli->settings.on_header_value = NULL;
+    cli->settings.on_headers_complete = NULL;
+    cli->settings.on_body = NULL;
     cli->settings.on_message_complete = http_on_msg_complete;
 
     FLOG_DEBUG(glog, "fev_buff created fd=%d", fd);

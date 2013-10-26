@@ -72,6 +72,7 @@ typedef struct response_opt {
 
 typedef struct client {
     int          fd;
+    int          keepalive;
     int          request_complete;
     int          response_complete;
     int          last_latency;
