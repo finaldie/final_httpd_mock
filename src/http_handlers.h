@@ -1,10 +1,13 @@
 #ifndef __HTTP_HANDLERS__
 #define __HTTP_HANDLERS__
 
+#include "http_parser.h"
+
+#include "flibs/fmbuf.h"
+#include "flibs/fhash.h"
 #include "flibs/fev_buff.h"
 #include "flibs/fev_timer.h"
 #include "flibs/fev_timer_service.h"
-#include "flibs/ftu_inc.h"
 
 #define FHTTP_MAX_LOG_FILENAME_SIZE 256
 #define FHTTP_PCAP_FILE_NAME_SIZE   512
@@ -69,19 +72,38 @@ typedef struct response_opt {
 
 typedef struct client {
     int          fd;
-    int          offset;
     int          request_complete;
     int          response_complete;
-    my_time      last_active;
     int          last_latency;
     fev_buff*    evbuff;
     ftimer_node* response_timer;
     ftimer_node* shutdown_timer;
     struct client_mgr* owner;
+    http_parser* parser;
+    http_parser_settings settings;
 
     resp_opt    opt;
     void*       priv;
 } client;
+
+typedef struct http_txn {
+    // common
+    client* cli;
+
+    // request part
+    unsigned char method;
+    unsigned short http_major;
+    unsigned short http_minor;
+    fhash* url_params_tbl;
+    fhash* req_headers_tbl;
+    fmbuf* req_body_buf;
+
+    // response part
+    unsigned short status_code;
+    fhash* resp_headers_tbl;
+    fmbuf* resp_body_buf;
+
+} http_txn;
 
 typedef struct client_mgr {
     service_arg_t* sargs;

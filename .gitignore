@@ -18,6 +18,10 @@
 bin/*
 etc/*
 
+# Tags
 cscope.*
 tags
 types_c.taghl
+
+# Temporary
+include
