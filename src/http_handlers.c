@@ -24,6 +24,7 @@ static fev_state* fev = NULL;
 static client_mgr* cli_mgr = NULL;
 static fev_timer_svc* ftm_svc = NULL;
 extern log_file_t* glog;
+extern log_file_t* gaccess_log;
 
 struct resp_tbl_t {
    register_resp_init init;
@@ -140,6 +141,11 @@ void send_response_cb(fev_state* fev __attribute__((unused)),
     // when we found the server timeout == 0, we can fast shutdown
     // the connection instead of going to next timer round checking
     if ( complete ) {
+        // write access log first, the format is: timestamp version method uri
+        log_file_write_f(gaccess_log, NULL, 0, "%d.%d %s %s", cli->parser->http_major,
+                         cli->parser->http_minor, http_method_str(cli->parser->method),
+                         cli->uri);
+
         if( mgr->sargs->timeout == 0 ) {
             destroy_client(cli);
             FLOG_DEBUG(glog, "send response, timeout==0 fast shutdown, fd=%d", cli->fd);
@@ -224,6 +230,25 @@ http_txn* fhttp_create_txn()
     txn->resp_body_buf = fmbuf_create(1);
 
     return txn;
+}
+
+int http_on_msg_begin(http_parser* parser)
+{
+    client* cli = parser->data;
+    cli->uri_len = 0;
+    return 0;
+}
+
+int http_on_url(http_parser* parser, const char* at, size_t length)
+{
+    client* cli = parser->data;
+    if ( cli->uri_len + length <= FHTTP_MAX_URI_LEN ) {
+        strncpy(cli->uri + cli->uri_len, at, length);
+        cli->uri_len += length;
+        cli->uri[cli->uri_len] = '\0';
+    }
+
+    return 0;
 }
 
 int http_on_msg_complete(http_parser* parser)
@@ -322,14 +347,16 @@ void http_accept(fev_state* fev, int fd, void* ud)
     cli->parser->data = cli;
 
     // fill the parser callbacks
-    cli->settings.on_message_begin = NULL;
-    cli->settings.on_url = NULL;
+    cli->settings.on_message_begin = http_on_msg_begin;
+    cli->settings.on_url = http_on_url;
     cli->settings.on_status_complete = NULL; // for response
     cli->settings.on_header_field = NULL;
     cli->settings.on_header_value = NULL;
     cli->settings.on_headers_complete = NULL;
     cli->settings.on_body = NULL;
     cli->settings.on_message_complete = http_on_msg_complete;
+
+    cli->uri_len = 0;
 
     FLOG_DEBUG(glog, "fev_buff created fd=%d", fd);
     return;

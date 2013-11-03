@@ -16,6 +16,7 @@
 // global vars
 int max_open_files = 0;
 log_file_t* glog = NULL;
+log_file_t* gaccess_log = NULL;
 
 int set_cpu_mask(int cpu_index)                                               {
     cpu_set_t mask;
@@ -56,6 +57,7 @@ int init_service_args(service_arg_t* sargs)
     sargs->timeout = 10000;
     sargs->log_level = LOG_LEVEL_INFO;
     strncpy(sargs->log_filename, "/var/log/httpd_mock.log", FHTTP_MAX_LOG_FILENAME_SIZE);
+    strncpy(sargs->access_log_filename, "/var/log/httpd_mock_access.log", FHTTP_MAX_LOG_FILENAME_SIZE);
 
     // common args
     sargs->listen_fd = -1;
@@ -139,6 +141,8 @@ void read_config(const char* filename, service_arg_t* sargs)
             }
         } else if ( strcmp(key, "log_filename") == 0 ) {
             strncpy(sargs->log_filename, value, FHTTP_MAX_LOG_FILENAME_SIZE);
+        } else if ( strcmp(key, "access_log_filename") == 0 ) {
+            strncpy(sargs->access_log_filename, value, FHTTP_MAX_LOG_FILENAME_SIZE);
         } else if ( strcmp(key, "pcap_file") == 0 ) {
             strncpy(sargs->pcap_filename, value, FHTTP_PCAP_FILE_NAME_SIZE);
         } else if ( strcmp(key, "pcap_filter_rule") == 0 ) {
@@ -261,6 +265,7 @@ int checkServiceArgs(service_arg_t* sargs)
     printf("  \\_ timeout : %d\n", sargs->timeout);
     printf("  \\_ log_level : %d\n", sargs->log_level);
     printf("  \\_ log_filename : %s\n", sargs->log_filename);
+    printf("  \\_ access_log_filename : %s\n", sargs->access_log_filename);
     printf("\n");
 
     return 0;
@@ -277,10 +282,17 @@ void printUsage()
 
 void prepare(service_arg_t* sargs)
 {
-    // create log system
+    // create user log
     glog = flog_create(sargs->log_filename);
     if ( !glog ) {
-        printf("cannot init log system\n");
+        printf("cannot create log file: %s\n", sargs->log_filename);
+        exit(1);
+    }
+
+    // create access log
+    gaccess_log = flog_create(sargs->access_log_filename);
+    if ( !gaccess_log ) {
+        printf("cannot create access log file: %s\n", sargs->access_log_filename);
         exit(1);
     }
 

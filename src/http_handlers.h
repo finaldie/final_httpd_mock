@@ -13,8 +13,9 @@
 #define FHTTP_PCAP_FILE_NAME_SIZE   512
 #define FHTTP_PCAP_FILTER_RULE_SIZE 512
 #define FHTTP_INVALID_LATENCY       -1
-#define FHTTP_CRLF                "\r\n"
-#define FHTTP_CRLF_SIZE           (sizeof(FHTTP_CRLF) - 1)
+#define FHTTP_CRLF                  "\r\n"
+#define FHTTP_CRLF_SIZE             (sizeof(FHTTP_CRLF) - 1)
+#define FHTTP_MAX_URI_LEN           1024
 
 typedef enum {
     RESP_TYPE_CONTENT = 0,
@@ -51,6 +52,7 @@ typedef struct {
     int timeout;
     int log_level;
     char log_filename[FHTTP_MAX_LOG_FILENAME_SIZE];
+    char access_log_filename[FHTTP_MAX_LOG_FILENAME_SIZE];
 
     // common args
     int max_open_files;
@@ -85,6 +87,10 @@ typedef struct client {
 
     resp_opt    opt;
     void*       priv;
+
+    // request info, tempoary store them here
+    char        uri[FHTTP_MAX_URI_LEN + 1];
+    size_t      uri_len;
 } client;
 
 typedef struct http_txn {
