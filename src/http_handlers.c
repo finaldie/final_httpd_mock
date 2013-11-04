@@ -141,10 +141,11 @@ void send_response_cb(fev_state* fev __attribute__((unused)),
     // when we found the server timeout == 0, we can fast shutdown
     // the connection instead of going to next timer round checking
     if ( complete ) {
-        // write access log first, the format is: timestamp version method uri
-        log_file_write_f(gaccess_log, NULL, 0, "%d.%d %s %s", cli->parser->http_major,
+        // write access log first, the format is: timestamp version method status_code uri
+        // currently, we only support return 200 response status code
+        log_file_write_f(gaccess_log, NULL, 0, "%d.%d %s %d %s", cli->parser->http_major,
                          cli->parser->http_minor, http_method_str(cli->parser->method),
-                         cli->uri);
+                         200, cli->uri);
 
         if( mgr->sargs->timeout == 0 ) {
             destroy_client(cli);
