@@ -18,7 +18,7 @@ prepare:
 	test -d $(LIB) || mkdir $(LIB)
 
 flibs:
-	cd $(FLIBS) && make all64
+	cd $(FLIBS) && make -s all64
 	cp -R $(FLIBSDEV)/$(INC)/* $(INC)
 	cp -R $(FLIBSDEV)/$(LIB)/* $(LIB)
 
@@ -43,7 +43,7 @@ clean: flibs_clean http_parser_clean
 	cd $(SRC) && make clean
 
 flibs_clean:
-	cd $(FLIBS) && make clean
+	cd $(FLIBS) && make -s clean
 
 http_parser_clean:
 	cd $(HTTP_PARSER) && make clean

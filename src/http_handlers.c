@@ -394,7 +394,15 @@ int init_listen(service_arg_t* sargs)
 {
     int listen_fd = fnet_create_listen(NULL, sargs->port, sargs->max_open_files, 0);
     if( listen_fd < 0 ) {
+        printf("create listen fd failed: %s\n", strerror(errno));
         return 1;
+    }
+
+    // Only enabled on linux kernel version >= 3.9
+    if (fnet_set_reuse_port(listen_fd)) {
+        printf("set reuse port failed: %s\n", strerror(errno));
+    } else {
+        printf("set reuse port successful\n");
     }
 
     sargs->listen_fd = listen_fd;
