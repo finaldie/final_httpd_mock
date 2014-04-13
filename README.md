@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/finaldie/final_httpd_mock.svg?branch=0.2)](https://travis-ci.org/finaldie/final_httpd_mock)
+
 Lastest Versions:
 
     +--------+--------------------+------------+--------------------------------------+
