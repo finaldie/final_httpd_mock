@@ -3,4 +3,4 @@
 	url = git://github.com/finaldie/final_libs.git
 [submodule "http-parser"]
 	path = http-parser
-	url = git@github.com:joyent/http-parser.git
+	url = git://github.com/joyent/http-parser.git
