@@ -392,20 +392,38 @@ void register_resp_handlers()
 
 int init_listen(service_arg_t* sargs)
 {
-    int listen_fd = fnet_create_listen(NULL, sargs->port, sargs->max_open_files, 0);
-    if( listen_fd < 0 ) {
-        printf("create listen fd failed: %s\n", strerror(errno));
-        return 1;
+    int port_cnt = sargs->workers > 0 ? sargs->workers : 1;
+    int i = 0;
+    int j = 0;
+
+    if (port_cnt > FHTTP_MAX_LISTEN_PORTS) {
+        port_cnt = FHTTP_MAX_LISTEN_PORTS;
     }
 
-    // Only enabled on linux kernel version >= 3.9
-    if (fnet_set_reuse_port(listen_fd)) {
-        printf("set reuse port failed: %s\n", strerror(errno));
-    } else {
-        printf("set reuse port successful\n");
+    sargs->listen_fd_cnt = 0;
+    for (i = 0; i < port_cnt; i++) {
+        int listen_fd = fnet_create_listen(NULL, sargs->port + i, sargs->max_open_files, 0);
+        if( listen_fd < 0 ) {
+            printf("create listen fd failed: %s\n", strerror(errno));
+            for (j = 0; j < sargs->listen_fd_cnt; j++) {
+                close(sargs->listen_fds[j]);
+            }
+            sargs->listen_fd_cnt = 0;
+            sargs->listen_fd = -1;
+            return 1;
+        }
+
+        // Only enabled on linux kernel version >= 3.9
+        if (fnet_set_reuse_port(listen_fd)) {
+            printf("set reuse port failed: %s\n", strerror(errno));
+        } else {
+            printf("set reuse port successful\n");
+        }
+
+        sargs->listen_fds[sargs->listen_fd_cnt++] = listen_fd;
     }
 
-    sargs->listen_fd = listen_fd;
+    sargs->listen_fd = sargs->listen_fds[0];
     return 0;
 }
 
@@ -428,12 +446,22 @@ int init_service(service_arg_t* sargs)
     cli_mgr = create_client_mgr(sargs->max_response_size);
     cli_mgr->sargs = sargs;
 
-    fev_listen_info* fli = fev_add_listener_byfd(fev, sargs->listen_fd, http_accept, cli_mgr);
-    if( !fli ) {
-        FLOG_ERROR(glog, "add listener failed, err=%s", strerror(errno));
-        exit(2);
+    if( sargs->listen_fd_cnt <= 0 ) {
+        sargs->listen_fds[0] = sargs->listen_fd;
+        sargs->listen_fd_cnt = 1;
     }
-    FLOG_INFO(glog, "add listener successful, bind port is %d", sargs->port);
+
+    fev_listen_info* fli = NULL;
+    int i = 0;
+    for (i = 0; i < sargs->listen_fd_cnt; i++) {
+        fli = fev_add_listener_byfd(fev, sargs->listen_fds[i], http_accept, cli_mgr);
+        if( !fli ) {
+            FLOG_ERROR(glog, "add listener failed, err=%s, fd=%d", strerror(errno), sargs->listen_fds[i]);
+            exit(2);
+        }
+    }
+    FLOG_INFO(glog, "add listener successful, bind ports is %d - %d",
+              sargs->port, sargs->port + sargs->listen_fd_cnt - 1);
 
     // init random seed
     srand(time(NULL));
