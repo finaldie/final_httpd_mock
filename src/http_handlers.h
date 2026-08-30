@@ -16,6 +16,7 @@
 #define FHTTP_CRLF                  "\r\n"
 #define FHTTP_CRLF_SIZE             (sizeof(FHTTP_CRLF) - 1)
 #define FHTTP_MAX_URI_LEN           1024
+#define FHTTP_MAX_LISTEN_PORTS      64
 
 typedef enum {
     RESP_TYPE_CONTENT = 0,
@@ -57,6 +58,8 @@ typedef struct {
     // common args
     int max_open_files;
     int listen_fd;
+    int listen_fds[FHTTP_MAX_LISTEN_PORTS];
+    int listen_fd_cnt;
     int cpu_cores;
 } service_arg_t;
 
